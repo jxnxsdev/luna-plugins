@@ -1,5 +1,6 @@
 import { LunaUnload, Tracer } from "@luna/core";
 import { settings } from "./Settings";
+import { loadFontFile } from "./loadfile.native";
 
 export { Settings } from "./Settings";
 
@@ -135,6 +136,43 @@ export async function updateFont() {
         }
     `;
 }
+
+let fontElement: HTMLStyleElement | null = null;
+
+export async function updateCustomFontUrl() {
+    const fontFileLocation = settings.customFontUrl;
+
+    const fontFileBase64 = await loadFontFile(fontFileLocation);
+
+    if (!fontFileBase64) {
+        trace.msg.err(`Failed to load custom font from location: ${fontFileLocation}`);
+        return;
+    }
+
+    const existingFontElement = document.getElementById("customFontStyle");
+    if (existingFontElement) {
+        existingFontElement.remove();
+    }
+
+    fontElement = document.createElement("style");
+    fontElement.id = "customFontStyle";
+    fontElement.textContent = `
+        @font-face {
+            font-family: "${settings.customFontName}";
+            src: url(${fontFileBase64}) format("truetype");
+            font-weight: normal;
+            font-style: normal;
+        }
+    `;
+    document.head.appendChild(fontElement);
+
+    trace.msg.log(`Custom font "${settings.customFontName}" loaded from ${fontFileLocation}`);
+}
+
+// Initial application
+updateCustomFontUrl().catch(err => {
+    trace.msg.err("Error updating custom font URL:", err);
+});
 
 updateFont().catch(err => {
     trace.msg.err("Error updating font:", err);

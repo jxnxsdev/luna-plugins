@@ -7,29 +7,34 @@ import {
     LunaSecureTextSetting,
     LunaSelectSetting,
     LunaSelectItem,
+    LunaTextSetting,
+    LunaButtonSetting
 } from "@luna/ui";
 
-import { updateFont, getAvailableFonts } from ".";
+import { updateFont, getAvailableFonts, updateCustomFontUrl } from ".";
 import { title } from "process";
 
 export const storage = ReactiveStore.getStore("CustomFonts");
 export const settings = await ReactiveStore.getPluginStorage("CustomFonts", {
     fontName: "",
+    customFontName: "",
+    customFontUrl: ""
 });
 
 export const Settings = () => {
     const [fontName, setFontName] = React.useState(settings.fontName);
+    const [customFontName, setCustomFontName] = React.useState(settings.customFontName);
     const [fonts, setFonts] = React.useState<string[]>([]);
+    const [customFontUrl, setCustomFontUrl] = React.useState(settings.customFontUrl);
 
     const titleDiv = document.querySelector("._title_a453dad");
-    const savedDiv = `TIDA<b><span style="color: #32f4ff;">Luna</span></b>	<span style="color: red;">BETA</span>`;
+    const savedDiv = `TIDA<b><span style="color: #32f4ff;">Luna</span></b>`;
 
     const refreshFonts = async () => {
         try {
-            const availableFonts = await getAvailableFonts();
+            let availableFonts = await getAvailableFonts();
             setFonts(availableFonts);
 
-            // If selected font isn't available anymore, reset
             if (settings.fontName && !availableFonts.includes(settings.fontName)) {
                 setFontName((settings.fontName = ""));
                 await updateFont();
@@ -65,6 +70,41 @@ export const Settings = () => {
                     <LunaSelectItem key={font} value={font} children={font} />
                 ))}
             </LunaSelectSetting>
+            <LunaTextSetting
+                title="Custom Font File Location"
+                desc="Enter the File Location of the custom font file (e.g., .woff, .ttf). Do not put it in quotes, etc.\nExample: C:\Users\User\Fonts\MyFont.ttf"
+                value={settings.customFontUrl}
+                onChange={async (e: any) => {
+                    setCustomFontUrl((settings.customFontUrl = e.target.value));
+                    await updateFont().catch((err) => {
+                        console.error("Error updating font:", err);
+                    });
+                }}
+            />
+            <LunaTextSetting
+                title="Custom Font Name"
+                desc="Enter the EXACT name of the custom font as specified in the font file."
+                value={settings.customFontName}
+                onChange={async (e: any) => {
+                    setCustomFontName((settings.customFontName = e.target.value));
+                    await updateFont().catch((err) => {
+                        console.error("Error updating font:", err);
+                    });
+                }}
+            />
+            <LunaButtonSetting
+                title="Set Custom Font from File"
+                desc="Fetch and apply the custom font from the provided file location."
+                onClick={async () => {
+                    setFontName((settings.fontName = settings.customFontName));
+                    updateCustomFontUrl().catch((err) => {
+                        console.error("Error updating custom font URL:", err);
+                    });
+                    await updateFont().catch((err) => {
+                        console.error("Error updating font:", err);
+                    });
+                }}
+            />
         </LunaSettings>
     );
 };
