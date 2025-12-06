@@ -117,7 +117,7 @@ export async function updateFonts(): Promise<void> {
 
 // --- Font Applier ---
 export async function updateFont() {
-    const font = settings.fontName;
+    const font = settings.customFontName || settings.fontName;
     if (!font) {
         style.textContent = ``;
         return;
@@ -140,7 +140,7 @@ export async function updateFont() {
 let fontElement: HTMLStyleElement | null = null;
 
 export async function updateCustomFontUrl() {
-    const fontFileLocation = settings.customFontUrl;
+    const fontFileLocation = await settings.customFontUrl;
 
     const fontFileBase64 = await loadFontFile(fontFileLocation);
 
@@ -149,12 +149,12 @@ export async function updateCustomFontUrl() {
         return;
     }
 
-    const existingFontElement = document.getElementById("customFontStyle");
+    const existingFontElement = await document.getElementById("customFontStyle");
     if (existingFontElement) {
-        existingFontElement.remove();
+        await existingFontElement.remove();
     }
 
-    fontElement = document.createElement("style");
+    fontElement = await document.createElement("style");
     fontElement.id = "customFontStyle";
     fontElement.textContent = `
         @font-face {
@@ -164,18 +164,26 @@ export async function updateCustomFontUrl() {
             font-style: normal;
         }
     `;
-    document.head.appendChild(fontElement);
+    await document.head.appendChild(fontElement);
 
     trace.msg.log(`Custom font "${settings.customFontName}" loaded from ${fontFileLocation}`);
 }
 
 // Initial application
-updateCustomFontUrl().catch(err => {
-    trace.msg.err("Error updating custom font URL:", err);
-});
+async function init() {
 
-updateFont().catch(err => {
-    trace.msg.err("Error updating font:", err);
+    document.fonts.ready.then(() => {
+        updateCustomFontUrl().catch((err) => {
+            trace.msg.err("Error updating custom font URL on init:", err);
+        });
+        updateFont().catch((err) => {
+            trace.msg.err("Error updating font on init:", err);
+        });
+    });
+}
+
+init().catch((err) => {
+    trace.msg.err("Error during initialization:", err);
 });
 
 unloads.add(() => {
