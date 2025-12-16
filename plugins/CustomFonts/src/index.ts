@@ -141,6 +141,7 @@ let fontElement: HTMLStyleElement | null = null;
 
 export async function updateCustomFontUrl() {
     const fontFileLocation = await settings.customFontUrl;
+    if (!fontFileLocation || !settings.customFontName) return;
 
     const fontFileBase64 = await loadFontFile(fontFileLocation);
 
