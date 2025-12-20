@@ -1,5 +1,6 @@
 import { LunaUnload, Tracer } from "@luna/core";
 import { settings } from "./Settings";
+import { loadFontFile } from "./loadfile.native";
 
 export { Settings } from "./Settings";
 
@@ -116,7 +117,7 @@ export async function updateFonts(): Promise<void> {
 
 // --- Font Applier ---
 export async function updateFont() {
-    const font = settings.fontName;
+    const font = settings.customFontName || settings.fontName;
     if (!font) {
         style.textContent = ``;
         return;
@@ -136,8 +137,54 @@ export async function updateFont() {
     `;
 }
 
-updateFont().catch(err => {
-    trace.msg.err("Error updating font:", err);
+let fontElement: HTMLStyleElement | null = null;
+
+export async function updateCustomFontUrl() {
+    const fontFileLocation = await settings.customFontUrl;
+    if (!fontFileLocation || !settings.customFontName) return;
+
+    const fontFileBase64 = await loadFontFile(fontFileLocation);
+
+    if (!fontFileBase64) {
+        trace.msg.err(`Failed to load custom font from location: ${fontFileLocation}`);
+        return;
+    }
+
+    const existingFontElement = await document.getElementById("customFontStyle");
+    if (existingFontElement) {
+        await existingFontElement.remove();
+    }
+
+    fontElement = await document.createElement("style");
+    fontElement.id = "customFontStyle";
+    fontElement.textContent = `
+        @font-face {
+            font-family: "${settings.customFontName}";
+            src: url(${fontFileBase64}) format("truetype");
+            font-weight: normal;
+            font-style: normal;
+        }
+    `;
+    await document.head.appendChild(fontElement);
+
+    trace.msg.log(`Custom font "${settings.customFontName}" loaded from ${fontFileLocation}`);
+}
+
+// Initial application
+async function init() {
+
+    document.fonts.ready.then(() => {
+        updateCustomFontUrl().catch((err) => {
+            trace.msg.err("Error updating custom font URL on init:", err);
+        });
+        updateFont().catch((err) => {
+            trace.msg.err("Error updating font on init:", err);
+        });
+    });
+}
+
+init().catch((err) => {
+    trace.msg.err("Error during initialization:", err);
 });
 
 unloads.add(() => {

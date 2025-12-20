@@ -49,10 +49,22 @@ main,
 #footerPlayer,
 #sidebar,
 [class^="_bar"],
-[class^="_sidebarItem"]:hover,
+aside[aria-label="Navigation sidebar"],
+[data-test="main-layout-header"],
+[class*="_solidHeader_"],
 .enable-scrollbar-styles ::-webkit-scrollbar-corner,
 .enable-scrollbar-styles ::-webkit-scrollbar-track {
-    background-color: color-mix(in srgb, var(--wave-color-solid-base-brighter), transparent 70%) !important;
+    background-color: color-mix(
+        in srgb,
+        var(--wave-color-solid-base-brighter),
+        transparent 70%
+    ) !important;
+}
+
+[class^="_sectionHeader"],
+[class*="_sectionHeader_"] {
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 #nowPlaying > [class^="_innerContainer"] {
