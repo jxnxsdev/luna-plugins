@@ -3,7 +3,7 @@
 This README is auto-generated from the plugin metadata in the `plugins/` folder.
 
 ### @jxnxsdev/audiovisualiser
-- **Description**: An actually working audio visualiser that neither breaks exclusive mode and works on all operating systems. Warning: The plugin is a bit CPU intensive.
+- **Description**: An actually working audio visualiser that neither breaks exclusive mode and works on all operating systems. Requires FFMPEG to be installed. Warning: The plugin is a bit CPU intensive.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
