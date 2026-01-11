@@ -2,6 +2,11 @@
 
 This README is auto-generated from the plugin metadata in the `plugins/` folder.
 
+### @jxnxsdev/audiovisualiser
+- **Description**: An actually working audio visualiser that neither breaks exclusive mode and works on all operating systems. Warning: The plugin is a bit CPU intensive.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/custom-fonts
 - **Description**: Allows you to set custom fonts for text elements in the app.
 - **Version**: 0.0.0
