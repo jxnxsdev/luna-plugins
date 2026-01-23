@@ -58,7 +58,7 @@ function sleep(ms: number) {
 
 function getClosestMagnitude(
   data: Map<number, number[]>,
-  timeMs: number
+  timeMs: number,
 ): number[] | undefined {
   let closestKey: number | undefined = undefined;
   let smallestDiff = Infinity;
@@ -159,7 +159,8 @@ async function fileDownload(file: ItemData) {
   while (true) {
     const progress = await item.downloadProgress();
     if (!progress) break;
-    if (progress.progress.downloaded >= progress.progress.total) break;
+    if (!progress.total || !progress.downloaded) continue;
+    if (progress.downloaded >= progress.total) break;
     await sleep(100);
   }
 }
