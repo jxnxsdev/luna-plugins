@@ -12,6 +12,11 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/discord-utils
+- **Description**: Provides various utilities for Discord integration. Most notibly the listen together feature of the Tidal Discord Bot
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/fadeout
 - **Description**: Fades out the song to the end of a track and makes a smooth transition to the next one.
 - **Version**: 0.0.0
