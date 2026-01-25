@@ -7,6 +7,11 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/cover-colored-ui
+- **Description**: Styles the text and icon colors based on the cover art colors.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/custom-fonts
 - **Description**: Allows you to set custom fonts for text elements in the app.
 - **Version**: 0.0.0
