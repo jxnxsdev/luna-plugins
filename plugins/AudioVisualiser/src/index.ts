@@ -1,8 +1,12 @@
 import type { LunaUnload } from "@luna/core";
 import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
 import { analyse } from "./analyser.native";
+import { clear } from "console";
 
 export const unloads = new Set<LunaUnload>();
+
+import { settings } from "./Setttings";
+export { Settings } from "./Setttings";
 
 type ItemData = {
   id: any;
@@ -14,7 +18,10 @@ type ItemData = {
 
 let currentFile: ItemData | null = null;
 let nextFile: ItemData | null = null;
+
 let currentPlayTime = 0;
+let lastPlaybackTime = 0;
+let lastPlaybackUpdate = 0;
 
 const visContainer = document.createElement("div");
 visContainer.style.position = "absolute";
@@ -28,6 +35,8 @@ visContainer.style.justifyContent = "space-between";
 visContainer.style.pointerEvents = "none";
 visContainer.style.opacity = "0.3";
 visContainer.style.zIndex = "1";
+visContainer.style.borderRadius = "inherit";
+visContainer.style.overflow = "hidden";
 
 const bars: HTMLDivElement[] = [];
 for (let i = 0; i < 8; i++) {
@@ -60,7 +69,7 @@ function getClosestMagnitude(
   data: Map<number, number[]>,
   timeMs: number,
 ): number[] | undefined {
-  let closestKey: number | undefined = undefined;
+  let closestKey: number | undefined;
   let smallestDiff = Infinity;
 
   for (const key of data.keys()) {
@@ -90,7 +99,7 @@ function animate() {
     bars[i].style.height = `${height}%`;
 
     const intensity = Math.min(height / 100, 1);
-    bars[i].style.backgroundColor = `rgba(51, 255, 238,${
+    bars[i].style.backgroundColor = `rgba(51, 255, 238, ${
       0.3 + 0.7 * intensity
     })`;
   }
@@ -99,6 +108,35 @@ function animate() {
 }
 
 requestAnimationFrame(animate);
+
+let visInterval: NodeJS.Timeout;
+
+async function createVisInterval() {
+  visInterval = setInterval(() => {
+    if (!currentFile?.data || !currentFile.wasAnalyzed) return;
+    if (!PlayState.playing) return;
+
+    const now = performance.now();
+    const elapsed = (now - lastPlaybackUpdate) / 1000;
+
+    currentPlayTime = lastPlaybackTime + elapsed;
+
+    const timeMs = Math.floor(currentPlayTime * 1000);
+    const magnitudes = getClosestMagnitude(currentFile.data, timeMs);
+
+    if (magnitudes) {
+      targetMagnitudes = magnitudes;
+    }
+  }, settings.updateInterval);
+}
+
+unloads.add(() => clearInterval(visInterval));
+createVisInterval();
+
+export function updateIntervalTiming() {
+  clearInterval(visInterval);
+  createVisInterval();
+}
 
 MediaItem.onMediaTransition(unloads, async (item) => {
   attachVisualiser();
@@ -125,16 +163,8 @@ MediaItem.onMediaTransition(unloads, async (item) => {
 ipcRenderer.on(unloads, "client.playback.playersignal", (data) => {
   if (data.signal !== "media.currenttime") return;
 
-  currentPlayTime = Number(data.time);
-
-  if (currentFile?.data && currentFile.wasAnalyzed) {
-    const timeMs = Math.floor(currentPlayTime * 1000);
-    const magnitudes = getClosestMagnitude(currentFile.data, timeMs);
-
-    if (magnitudes) {
-      targetMagnitudes = magnitudes;
-    }
-  }
+  lastPlaybackTime = Number(data.time);
+  lastPlaybackUpdate = performance.now();
 });
 
 async function getDownloadPathForItem(item: MediaItem): Promise<string> {
