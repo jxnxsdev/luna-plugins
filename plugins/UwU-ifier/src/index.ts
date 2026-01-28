@@ -160,7 +160,6 @@ function replaceBackgroundImage(el: HTMLElement) {
 uwuifyTextNodes(document.body);
 
 preloadAllNekoImages().then(() => {
-  
   if (settings.replaceImages) replaceAllImages(document.body);
 
   const observer = new MutationObserver((mutations) => {
