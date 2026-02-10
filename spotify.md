@@ -12,7 +12,7 @@ To obtain your Spotify Client ID and Secret, follow these steps:
    - Agree to the terms and conditions, then click "Create".
 3. **Set redirect URIs**:
    - After creating the app, go to the "Edit Settings" section.
-   - Add `http://127.0.0.1:2402/callback` and `http://[::1]/callback` as a redirect URI.
+   - Add `http://127.0.0.1:2402/callback` as a redirect URI.
    - Save the changes by scrolling down and clicking "Save".
 4. **Get Client ID and Secret**:
    - In the app details, you will find your **Client ID** and **Client Secret**.

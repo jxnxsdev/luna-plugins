@@ -1,0 +1,14 @@
+{
+	"name": "@jxnxsdev/miniplayer",
+	"description": "Adds a mini popout player to tidal",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"clipboardy": "^4.0.0"
+	}
+}

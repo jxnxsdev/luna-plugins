@@ -1,0 +1,16 @@
+{
+	"name": "@jxnxsdev/audiovisualiser",
+	"description": "An actually working audio visualiser that neither breaks exclusive mode and works on all operating systems. Requires FFMPEG to be installed. Warning: The plugin is a bit CPU intensive.",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"dsp.js": "^1.0.1",
+		"fft-js": "^0.0.12",
+		"kissfft-js": "^0.1.8"
+	}
+}

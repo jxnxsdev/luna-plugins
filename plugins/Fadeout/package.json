@@ -1,0 +1,11 @@
+{
+	"name": "@jxnxsdev/fadeout",
+	"description": "Fades out the song to the end of a track and makes a smooth transition to the next one.",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module"
+}

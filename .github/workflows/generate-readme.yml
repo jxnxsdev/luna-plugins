@@ -1,0 +1,30 @@
+name: Generate Plugin README
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  generate-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Generate README
+        run: node generate-readme.cjs
+
+      - name: Commit and push README
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add README.md
+          git commit -m "Auto-generated README"
+          git push
+        continue-on-error: true

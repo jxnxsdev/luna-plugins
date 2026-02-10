@@ -1,0 +1,18 @@
+{
+	"name": "@jxnxsdev/discord-utils",
+	"description": "Provides various utilities for Discord integration. Most notibly the listen together feature of the Tidal Discord Bot",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"dsp.js": "^1.0.1",
+		"fft-js": "^0.0.12",
+		"kissfft-js": "^0.1.8",
+		"socket.io": "^4.8.3",
+		"socket.io-client": "^4.8.3"
+	}
+}
