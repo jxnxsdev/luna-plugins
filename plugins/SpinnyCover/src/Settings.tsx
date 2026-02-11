@@ -5,13 +5,14 @@ import { LunaSettings, LunaSwitchSetting, LunaNumberSetting } from "@luna/ui";
 import { getRandomHelicopterGif } from "./helicopter";
 
 export const storage = ReactiveStore.getStore("SpinnyCover");
-export const settings = await ReactiveStore.getPluginStorage("SpinnyCover", { spinSpeed: 10, blurPercentage: 50 });
+export const settings = await ReactiveStore.getPluginStorage("SpinnyCover", { spinSpeed: 10, blurPercentage: 50, stopOnPause: false });
 
 let lastSpeedNumber = settings.spinSpeed;
 
 export const Settings = () => {
     const [spinSpeed, setSpinSpeed] = React.useState(settings.spinSpeed);
     const [blurPercentage, setBlurPercentage] = React.useState(settings.blurPercentage);
+    const [stopOnPause, setStopOnPause] = React.useState(settings.stopOnPause);
 
     React.useEffect(() => {
         const invertedSpeed = 25000 - settings.spinSpeed * 25;
@@ -65,6 +66,15 @@ export const Settings = () => {
                     if (value > 100) setBlurPercentage((settings.blurPercentage = 100));
                     document.documentElement.style.setProperty("--spinny-cover-blur", `${value / 5}px`);
                     console.log(`Blur percentage set to ${value}%`);
+                }}
+            />
+            <LunaSwitchSetting
+                title="Stop on Pause"
+                desc="Stop the spinning when playback is paused."
+                tooltip="Pause the spin when music is paused"
+                checked={stopOnPause}
+                onChange={(_, checked: boolean) => {
+                    setStopOnPause((settings.stopOnPause = checked));
                 }}
             />
         </LunaSettings>

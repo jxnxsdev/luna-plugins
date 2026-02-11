@@ -1,6 +1,9 @@
 import type { LunaUnload } from "@luna/core";
-import { MediaItem } from "@luna/lib";
+import { MediaItem, PlayState } from "@luna/lib";
 import { settings } from "./Settings";
+
+
+export const unloads = new Set<LunaUnload>();
 
 const styles = document.createElement("style");
 document.head.appendChild(styles);
@@ -46,10 +49,22 @@ main,
 #footerPlayer,
 #sidebar,
 [class^="_bar"],
-[class^="_sidebarItem"]:hover,
+aside[aria-label="Navigation sidebar"],
+[data-test="main-layout-header"],
+[class*="_solidHeader_"],
 .enable-scrollbar-styles ::-webkit-scrollbar-corner,
 .enable-scrollbar-styles ::-webkit-scrollbar-track {
-    background-color: color-mix(in srgb, var(--wave-color-solid-base-brighter), transparent 70%) !important;
+    background-color: color-mix(
+        in srgb,
+        var(--wave-color-solid-base-brighter),
+        transparent 70%
+    ) !important;
+}
+
+[class^="_sectionHeader"],
+[class*="_sectionHeader_"] {
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 #nowPlaying > [class^="_innerContainer"] {
@@ -131,10 +146,15 @@ async function setInitialCover() {
     const url = await mediaItem.coverUrl();
     if (!url) return;
     coverBg.style.backgroundImage = `url("${url}")`;
+    if (settings.stopOnPause) {
+        coverBg.style.animationPlayState = "paused";
+    } else {
+        coverBg.style.animationPlayState = "running";
+    }
 }
 setInitialCover();
 
-MediaItem.onMediaTransition(new Set(), async (mediaItem) => {
+MediaItem.onMediaTransition(unloads, async (mediaItem) => {
     if (!mediaItem) return;
     const url = await mediaItem.coverUrl();
     if (!url) return;
@@ -148,9 +168,20 @@ MediaItem.onMediaTransition(new Set(), async (mediaItem) => {
     }, 100);
 });
 
+PlayState.onState(unloads, (state) => {
+    if (settings.stopOnPause) {
+        if (state === "NOT_PLAYING") {
+            coverBg.style.animationPlayState = "paused";
+        } else {
+            coverBg.style.animationPlayState = "running";
+        }
+    } else {
+        coverBg.style.animationPlayState = "running";
+    }
+});
+
 export { Settings } from "./Settings";
 
-export const unloads = new Set<LunaUnload>();
 unloads.add(() => {
     styles.remove();
     coverBg.remove();

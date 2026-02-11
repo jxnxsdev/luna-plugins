@@ -2,13 +2,38 @@
 
 This README is auto-generated from the plugin metadata in the `plugins/` folder.
 
+### @jxnxsdev/audiovisualiser
+- **Description**: An actually working audio visualiser that neither breaks exclusive mode and works on all operating systems. Requires FFMPEG to be installed. Warning: The plugin is a bit CPU intensive.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
+### @jxnxsdev/cover-colored-ui
+- **Description**: Styles the text and icon colors based on the cover art colors.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/custom-fonts
 - **Description**: Allows you to set custom fonts for text elements in the app.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/discord-utils
+- **Description**: Provides various utilities for Discord integration. Most notibly the listen together feature of the Tidal Discord Bot
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
+### @jxnxsdev/fadeout
+- **Description**: Fades out the song to the end of a track and makes a smooth transition to the next one.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/lyrics-everywhere
 - **Description**: Lyrics fixed to the bottom of the screen.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
+### @jxnxsdev/miniplayer
+- **Description**: Adds a mini popout player to tidal
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
