@@ -62,6 +62,9 @@ async function initializePlugin(): Promise<void> {
       settings.token = "";
       settings.refreshToken = "";
       settings.popupWasShown = true;
+    }
+    
+    if (!settings.announcementDismissed) {
       await showPopup();
     } else if (settings.isLoggedIn && settings.activePlaylists.length > 0) {
       await updatePlaylists();
@@ -90,36 +93,89 @@ async function showPopup(): Promise<void> {
   popup.style.padding = "24px 32px";
   popup.style.zIndex = "10000";
   popup.style.maxWidth = "90%";
-  popup.style.width = "500px";
+  popup.style.width = "550px";
+  popup.style.maxHeight = "85vh";
   popup.style.borderRadius = "12px";
   popup.style.fontFamily = "Segoe UI, sans-serif";
   popup.style.color = "#eee";
-  popup.style.textAlign = "center";
   popup.style.backdropFilter = "blur(6px)";
   popup.style.backgroundClip = "padding-box";
+  popup.style.overflowY = "auto";
 
   popup.innerHTML = `
-    <div style="font-size: 18px; margin-bottom: 16px;">
-      <strong>Syncify has been updated</strong><br><br>
-      Syncify now requires you to provide your own OAuth credentials.<br>
-      This is because Spotify limits requests per application and not per user.<br>
-      You will find a link to a guide inside the Syncify settings.
+    <div style="text-align: left; font-size: 14px; line-height: 1.6;">
+      <h2 style="margin-top: 0; margin-bottom: 16px; font-size: 20px; color: #fff;">Important Update: Syncify Plugin Changes</h2>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 8px; color: #4CAF50; font-size: 16px;">The Good News</h3>
+      <p style="margin: 8px 0;">
+        I've just released a big update that fixes a lot of bugs and introduces a much more improved syncing UI. Playlist syncing is now more reliable and works the way it always should have.
+      </p>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 8px; color: #f44336; font-size: 16px;">The Bad News (thanks, Spotify)</h3>
+      <p style="margin: 8px 0;">
+        As of the 09.03.2026, the Syncify plugin can no longer be used for free. Spotify has changed how their Developer API works and you now need an active Spotify Premium subscription just to create or use API applications. This change also affects and breaks already existing apps. This is a massive <strong>fuck you</strong> from Spotify to developers who build tools on their platform. It's another deliberate move to lock users in and kill off anything that makes leaving Spotify easier. Changes like this don't happen by accident. Tools like Syncify, which make it easy to move your playlists away from Spotify for free are surely the reason this restriction exists in the first place. Yet another reason to move away from this platform.
+      </p>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 8px; font-size: 16px;">What Does This Mean Going Forward?</h3>
+      <p style="margin: 8px 0;">
+        Syncify will continue to work for users who have an active Spotify Premium subscription. However, I will no longer actively maintain or update the plugin. I'm not interested in paying for two streaming services just to keep an integration alive, especially when one of them keeps pulling moves like this and funding things I fundamentally disagree with. As long as Spotify doesn't break their API again, the plugin should keep working for Premium users for the foreseeable future.
+      </p>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 8px; font-size: 16px;">What You Should Do Now</h3>
+      <ul style="margin: 8px 0; padding-left: 20px;">
+        <li style="margin: 4px 0;">If you don't want to pay for Spotify Premium, transfer all of your important playlists now, while it's still possible.</li>
+        <li style="margin: 4px 0;">If you're reading this after the API has been locked behind Premium, you can still use Spotify's one month free trial, transfer everything, and cancel before being charged. This only works once per account. After that, at least one paid month is required.</li>
+      </ul>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 8px; font-size: 16px;">About Future Features</h3>
+      <p style="margin: 8px 0;">
+        I planned to add support for:
+      </p>
+      <ul style="margin: 8px 0; padding-left: 20px;">
+        <li style="margin: 4px 0;">syncing liked songs</li>
+        <li style="margin: 4px 0;">syncing discovery and algorithmic playlists</li>
+        <li style="margin: 4px 0;">syncing from tidal to spotify</li>
+      </ul>
+      <p style="margin: 8px 0;">
+        At this point, there's pretty much no reason to continue development, since most users will no longer be able to use the plugin anyway.
+      </p>
+      
+      <div style="display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end;">
+        <button id="popup-close-btn" style="
+          padding: 10px 20px;
+          font-size: 14px;
+          background-color: #3a3a3a;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+        ">Close</button>
+        <button id="popup-do-not-show-btn" style="
+          padding: 10px 20px;
+          font-size: 14px;
+          background-color: #555;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+        ">Close and Do Not Show Again</button>
+      </div>
     </div>
-    <button id="popup-close-btn" style="
-      padding: 10px 20px;
-      font-size: 14px;
-      background-color: #3a3a3a;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    ">Close</button>
   `;
 
   document.body.appendChild(popup);
 
   const closeBtn = document.getElementById("popup-close-btn");
+  const doNotShowBtn = document.getElementById("popup-do-not-show-btn");
+  
+  const closePopup = () => {
+    popup.style.opacity = "0";
+    popup.style.transition = "opacity 0.3s ease";
+    setTimeout(() => popup.remove(), 300);
+  };
+
   if (closeBtn) {
     closeBtn.addEventListener("mouseenter", () => {
       closeBtn.style.backgroundColor = "#555";
@@ -128,9 +184,20 @@ async function showPopup(): Promise<void> {
       closeBtn.style.backgroundColor = "#3a3a3a";
     });
     closeBtn.addEventListener("click", () => {
-      popup.style.opacity = "0";
-      popup.style.transition = "opacity 0.3s ease";
-      setTimeout(() => popup.remove(), 300);
+      closePopup();
+    });
+  }
+  
+  if (doNotShowBtn) {
+    doNotShowBtn.addEventListener("mouseenter", () => {
+      doNotShowBtn.style.backgroundColor = "#777";
+    });
+    doNotShowBtn.addEventListener("mouseleave", () => {
+      doNotShowBtn.style.backgroundColor = "#555";
+    });
+    doNotShowBtn.addEventListener("click", () => {
+      settings.announcementDismissed = true;
+      closePopup();
     });
   }
 }

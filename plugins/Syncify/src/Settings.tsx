@@ -27,7 +27,8 @@ export const settings = await ReactiveStore.getPluginStorage("Syncify", {
     clientSecret: "",
     activePlaylists: [] as string[],
     activePlaylistsSettings: [] as string[],
-    popupWasShown: false
+    popupWasShown: false,
+    announcementDismissed: false
 });
 
 export const Settings = () => {
