@@ -125,6 +125,7 @@ async function showPopup(): Promise<void> {
       <ul style="margin: 8px 0; padding-left: 20px;">
         <li style="margin: 4px 0;">If you don't want to pay for Spotify Premium, transfer all of your important playlists now, while it's still possible.</li>
         <li style="margin: 4px 0;">If you're reading this after the API has been locked behind Premium, you can still use Spotify's one month free trial, transfer everything, and cancel before being charged. This only works once per account. After that, at least one paid month is required.</li>
+        <li style="margin: 4px 0;"><strong>Put pressure on Spotify to revert this decision.</strong> Contact them through their support channels, social media, and community forums. Let them know this change is harmful to developers and users alike. The more voices speak up, the more likely they are to reconsider.</li>
       </ul>
       
       <h3 style="margin-top: 20px; margin-bottom: 8px; font-size: 16px;">About Future Features</h3>
