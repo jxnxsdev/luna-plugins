@@ -1,6 +1,6 @@
 {
 	"name": "@jxnxsdev/syncify",
-	"description": "Allows you to play Spotify playlists on Tidal",
+	"description": "Allows you to play Spotify playlists on Tidal. Requires spotify premium from the 2026-03-09 onwards.",
 	"author": {
 		"name": "jxnxsdev",
 		"url": "https://github.com/jxnxsdev",
