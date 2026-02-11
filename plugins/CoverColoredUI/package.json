@@ -1,0 +1,17 @@
+{
+	"name": "@jxnxsdev/cover-colored-ui",
+	"description": "Styles the text and icon colors based on the cover art colors.",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"colorthief": "^2.6.0"
+	},
+	"devDependencies": {
+		"@types/colorthief": "^2.6.1"
+	}
+}

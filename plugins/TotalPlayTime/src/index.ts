@@ -73,9 +73,12 @@ function updateDisplayedTime() {
     if (!timeElement) return;
 
     const clamped = Math.max(0, remainingPlayTime);
-    const formatted = clamped >= 3600
-        ? new Date(clamped * 1000).toISOString().substr(11, 8)
-        : new Date(clamped * 1000).toISOString().substr(14, 5);
+
+    const hours: number = Math.floor((clamped) / 3600);
+    const minutes: number = Math.floor((clamped % 3600) / 60);
+    const seconds: number = clamped % 60;
+  
+    const formatted = hours.toString().padStart(2, '0') + ":" + minutes.toString().padStart(2, '0') + ":" + seconds.toString().padStart(2, '0');
 
     timeElement.textContent = formatted;
 }
