@@ -48,7 +48,7 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Author**: jxnxsdev
 
 ### @jxnxsdev/syncify
-- **Description**: Allows you to play Spotify playlists on Tidal
+- **Description**: Allows you to play Spotify playlists on Tidal. Requires spotify premium from the 2026-03-09 onwards.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
