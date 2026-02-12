@@ -42,6 +42,11 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/qr-share
+- **Description**: Adds a sharing option to the context menu of songs, albums, playlists, and artists that generates a QR code linking to the item.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/spinny-cover
 - **Description**: Puts the Song Cover Image as the background and makes it spin.
 - **Version**: 0.0.0
