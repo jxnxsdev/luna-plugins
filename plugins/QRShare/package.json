@@ -1,0 +1,19 @@
+{
+	"name": "@jxnxsdev/qr-share",
+	"description": "Adds a sharing option to the context menu of songs, albums, playlists, and artists that generates a QR code linking to the item.",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"jimp": "^0.22.12",
+		"pureimage": "^0.4.18",
+		"qrcode": "^1.5.4"
+	},
+	"devDependencies": {
+		"@types/qrcode": "^1.5.5"
+	}
+}
