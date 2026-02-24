@@ -9,6 +9,9 @@
 	"main": "./src/index.ts",
 	"type": "module",
 	"dependencies": {
-		"clipboardy": "^4.0.0"
+		"colorthief": "^2.6.0"
+	},
+	"devDependencies": {
+		"@types/colorthief": "^2.6.1"
 	}
 }

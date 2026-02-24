@@ -66,13 +66,14 @@
             margin-bottom: 12px;
             -webkit-app-region: no-drag;
             min-height: 24px;
+            position: relative;
         }
 
-        .settings-btn,
+        .lyrics-toggle-btn,
         .close-btn {
             background: transparent;
             border: none;
-            color: var(--text-secondary);
+            color: var(--text-primary);
             font-size: 16px;
             cursor: pointer;
             padding: 6px;
@@ -84,12 +85,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
         }
 
-        .settings-btn:hover,
+        .lyrics-toggle-btn:hover,
         .close-btn:hover {
             background: var(--control-hover);
-            color: var(--text-primary);
+            color: var(--primary-color);
+        }
+
+        .lyrics-toggle-btn.disabled {
+            opacity: 0.5;
         }
 
         .main-content {
@@ -127,6 +133,13 @@
             border: 3px solid var(--primary-color);
             flex-shrink: 0;
             overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .album-cover.large {
+            width: 150px;
+            height: 150px;
+            font-size: 42px;
         }
 
         .album-cover img {
@@ -134,6 +147,65 @@
             height: 100%;
             object-fit: cover;
             border-radius: 50%;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+            -webkit-app-region: no-drag;
+        }
+
+        .volume-icon {
+            color: var(--text-secondary);
+            font-size: 14px;
+            min-width: 16px;
+            text-align: center;
+        }
+
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 80px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .volume-slider::-webkit-slider-thumb:hover {
+            width: 14px;
+            height: 14px;
+            background: var(--accent-color);
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .volume-slider::-moz-range-thumb:hover {
+            width: 14px;
+            height: 14px;
+            background: var(--accent-color);
         }
 
         .info-and-controls {
@@ -270,6 +342,10 @@
             transition: all 0.3s ease;
         }
 
+        .lyrics-container.hidden {
+            display: none;
+        }
+
         .lyrics-container::-webkit-scrollbar {
             width: 6px;
         }
@@ -402,7 +478,9 @@
 <body>
     <div class="container" id="container">
         <div class="header">
-            <div></div>
+            <button class="lyrics-toggle-btn" id="lyricsToggleBtn" onclick="toggleLyrics(event)" title="Toggle Lyrics">
+                <i class="fas fa-music" id="lyricsIcon"></i>
+            </button>
             <button class="close-btn" onclick="closeWindow()" title="Close">×</button>
         </div>
 
@@ -419,7 +497,7 @@
                         <div class="song-album" id="songAlbum">Album • Year</div>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
                         <div class="player-controls">
                             <button class="control-btn previous" onclick="sendPlayerCommand('previous')"
                                 title="Previous">
@@ -434,14 +512,20 @@
                             </button>
                         </div>
 
-                        <div class="progress-container">
-                            <div class="progress-time">
-                                <span id="currentTime">0:00</span>
-                                <span id="totalTime">0:00</span>
-                            </div>
-                            <div class="progress-bar" onclick="handleProgressClick(event)">
-                                <div class="progress-fill" id="progressFill"></div>
-                            </div>
+                        <div class="volume-control">
+                            <i class="fas fa-volume-up volume-icon"></i>
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="volumeSlider" 
+                                   oninput="handleVolumeChange(this.value)" title="Volume">
+                        </div>
+                    </div>
+                    
+                    <div class="progress-container" style="width: 100%;">
+                        <div class="progress-time">
+                            <span id="currentTime">0:00</span>
+                            <span id="totalTime">0:00</span>
+                        </div>
+                        <div class="progress-bar" onclick="handleProgressClick(event)">
+                            <div class="progress-fill" id="progressFill"></div>
                         </div>
                     </div>
                 </div>
@@ -463,6 +547,124 @@
         let lastUpdateTime = Date.now();
         let updateCheckInterval = null;
         let hasTimedLyrics = false;
+        let showLyrics = true;
+
+        function handleVolumeChange(volume) {
+            const volumeIcon = document.querySelector('.volume-icon');
+            if (volume == 0) {
+                volumeIcon.className = 'fas fa-volume-mute volume-icon';
+            } else if (volume < 50) {
+                volumeIcon.className = 'fas fa-volume-down volume-icon';
+            } else {
+                volumeIcon.className = 'fas fa-volume-up volume-icon';
+            }
+            
+            sendPlayerCommand('volume', { volume: parseInt(volume) });
+        }
+
+        function toggleLyrics(event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            const lyricsBtn = document.getElementById('lyricsToggleBtn');
+            const lyricsIcon = document.getElementById('lyricsIcon');
+            const lyricsContainer = document.getElementById('lyricsContainer');
+            const albumCover = document.getElementById('albumCover');
+            
+            showLyrics = !showLyrics;
+            
+            if (showLyrics && hasLyricsAvailable) {
+                lyricsIcon.className = 'fas fa-music';
+                lyricsBtn.classList.remove('disabled');
+                lyricsContainer.classList.remove('hidden');
+                albumCover.classList.remove('large');
+            } else {
+                lyricsIcon.className = 'fas fa-volume-xmark';
+                lyricsBtn.classList.add('disabled');
+                lyricsContainer.classList.add('hidden');
+                albumCover.classList.add('large');
+            }
+            
+            // Save preference
+            try {
+                localStorage.setItem('showLyrics', showLyrics);
+            } catch (e) {
+                // localStorage not available in data URLs
+            }
+        }
+
+        function updateThemeColors(colors) {
+            if (!colors) return;
+            
+            const root = document.documentElement;
+            root.style.setProperty('--primary-color', colors.primary);
+            root.style.setProperty('--accent-color', colors.accent);
+            
+            // Extract RGB values
+            const primaryRgb = colors.primary.match(/\d+/g);
+            const accentRgb = colors.accent.match(/\d+/g);
+            
+            if (primaryRgb) {
+                // Update all color-related variables
+                const glowColor = `rgba(${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]}, 0.4)`;
+                root.style.setProperty('--album-glow', `0 0 20px ${glowColor}`);
+                
+                // Update borders and glass effects with primary color
+                const borderColor = `rgba(${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]}, 0.3)`;
+                root.style.setProperty('--glass-border', borderColor);
+                
+                // Update hover effect
+                const hoverColor = `rgba(${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]}, 0.15)`;
+                root.style.setProperty('--control-hover', hoverColor);
+                
+                // Create darker secondary color for background
+                const r = Math.max(0, Math.floor(primaryRgb[0] * 0.15));
+                const g = Math.max(0, Math.floor(primaryRgb[1] * 0.15));
+                const b = Math.max(0, Math.floor(primaryRgb[2] * 0.15));
+                const secondaryColor = `rgb(${r}, ${g}, ${b})`;
+                root.style.setProperty('--secondary-color', secondaryColor);
+                
+                // Update background gradient (darker)
+                const gradient = `linear-gradient(135deg, ${secondaryColor} 0%, rgb(${Math.floor(r*0.7)}, ${Math.floor(g*0.7)}, ${Math.floor(b*0.7)}) 100%)`;
+                root.style.setProperty('--container-gradient', gradient);
+                
+                // Update glass background (darker)
+                const glassColor = `rgba(${r}, ${g}, ${b}, 0.98)`;
+                root.style.setProperty('--glass-bg', glassColor);
+                
+                // Much lighter text and UI elements for visibility
+                const textPrimary = `rgb(${Math.min(255, primaryRgb[0] * 0.8 + 150)}, ${Math.min(255, primaryRgb[1] * 0.8 + 150)}, ${Math.min(255, primaryRgb[2] * 0.8 + 150)})`;
+                root.style.setProperty('--text-primary', textPrimary);
+                
+                const textSecondary = `rgb(${Math.min(255, primaryRgb[0] * 0.6 + 120)}, ${Math.min(255, primaryRgb[1] * 0.6 + 120)}, ${Math.min(255, primaryRgb[2] * 0.6 + 120)})`;
+                root.style.setProperty('--text-secondary', textSecondary);
+            }
+        }
+
+        // Load saved preferences
+        try {
+            const savedShowLyrics = localStorage.getItem('showLyrics');
+            if (savedShowLyrics !== null) {
+                showLyrics = savedShowLyrics === 'true';
+                const lyricsBtn = document.getElementById('lyricsToggleBtn');
+                const lyricsIcon = document.getElementById('lyricsIcon');
+                const lyricsContainer = document.getElementById('lyricsContainer');
+                const albumCover = document.getElementById('albumCover');
+                
+                if (!showLyrics) {
+                    if (lyricsIcon) lyricsIcon.className = 'fas fa-volume-xmark';
+                    if (lyricsBtn) lyricsBtn.classList.add('disabled');
+                    lyricsContainer.classList.add('hidden');
+                    albumCover.classList.add('large');
+                } else {
+                    if (lyricsIcon) lyricsIcon.className = 'fas fa-music';
+                    if (lyricsBtn) lyricsBtn.classList.remove('disabled');
+                }
+            }
+        } catch (e) {
+            // localStorage not available in data URLs
+        }
 
         function sendPlayerCommand(action, data = {}) {
             if (window.sendIPC) {
@@ -689,18 +891,37 @@
 
         function renderLyrics(lyricsText) {
             const container = document.getElementById('lyricsContainer');
+            const albumCover = document.getElementById('albumCover');
+            const lyricsBtn = document.getElementById('lyricsToggleBtn');
+            const lyricsIcon = document.getElementById('lyricsIcon');
             const lyrics = parseLyrics(lyricsText);
             currentLyrics = lyrics;
 
             if (lyrics.length === 0) {
                 hasLyricsAvailable = false;
                 container.classList.remove('show');
+                container.classList.add('hidden');
                 container.innerHTML = '<div class="no-lyrics">No lyrics available</div>';
+                albumCover.classList.add('large');
+                if (lyricsIcon) lyricsIcon.className = 'fas fa-volume-xmark';
+                if (lyricsBtn) lyricsBtn.classList.add('disabled');
                 return;
             }
 
             hasLyricsAvailable = true;
-            container.classList.add('show');
+            if (showLyrics) {
+                container.classList.add('show');
+                container.classList.remove('hidden');
+                albumCover.classList.remove('large');
+                if (lyricsIcon) lyricsIcon.className = 'fas fa-music';
+                if (lyricsBtn) lyricsBtn.classList.remove('disabled');
+            } else {
+                container.classList.remove('show');
+                container.classList.add('hidden');
+                albumCover.classList.add('large');
+                if (lyricsIcon) lyricsIcon.className = 'fas fa-volume-xmark';
+                if (lyricsBtn) lyricsBtn.classList.add('disabled');
+            }
             container.innerHTML = '';
 
             if (hasTimedLyrics) {
@@ -724,12 +945,23 @@
 
         function updateDisplayState() {
             const lyricsContainer = document.getElementById('lyricsContainer');
+            const albumCover = document.getElementById('albumCover');
+            const lyricsBtn = document.getElementById('lyricsToggleBtn');
+            const lyricsIcon = document.getElementById('lyricsIcon');
 
-            if (hasLyricsAvailable) {
+            if (hasLyricsAvailable && showLyrics) {
                 lyricsContainer.classList.add('show');
+                lyricsContainer.classList.remove('hidden');
+                albumCover.classList.remove('large');
+                if (lyricsIcon) lyricsIcon.className = 'fas fa-music';
+                if (lyricsBtn) lyricsBtn.classList.remove('disabled');
             } else {
                 lyricsContainer.classList.remove('show');
+                lyricsContainer.classList.add('hidden');
                 lyricsContainer.innerHTML = '<div class="no-lyrics">No lyrics available for this song</div>';
+                albumCover.classList.add('large');
+                if (lyricsIcon) lyricsIcon.className = 'fas fa-volume-xmark';
+                if (lyricsBtn) lyricsBtn.classList.add('disabled');
             }
         }
 
@@ -754,6 +986,11 @@
                 try {
                     updateSongInfo(data);
 
+                    // Update theme colors from main window
+                    if (data.colors) {
+                        updateThemeColors(data.colors);
+                    }
+
                     if (typeof data.songProgress === 'number' && typeof data.songLength === 'number') {
                         updateProgress(data.songProgress, data.songLength);
                     }
@@ -771,8 +1008,11 @@
                         if (hasLyricsAvailable) {
                             hasLyricsAvailable = false;
                             const container = document.getElementById('lyricsContainer');
+                            const albumCover = document.getElementById('albumCover');
                             container.classList.remove('show');
+                            container.classList.add('hidden');
                             container.innerHTML = '<div class="no-lyrics">No lyrics available</div>';
+                            albumCover.classList.add('large');
                         }
                     }
 
