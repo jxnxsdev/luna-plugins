@@ -18,6 +18,130 @@ type ItemData = {
   lastTimelineIndex?: number;
 };
 
+type CachedAnalyzedData = {
+  timeline: number[];
+  values: number[][];
+};
+
+const RECENT_SONG_HISTORY_LIMIT = 200;
+const CACHE_STORAGE_KEY = "AudioVisualiser.analysedAudioCache.v1";
+const HISTORY_STORAGE_KEY = "AudioVisualiser.recentSongs.v1";
+const analysedAudioCache = new Map<string, CachedAnalyzedData>();
+const recentPlayedSongIds: string[] = [];
+let persistCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+
+type SafeStorage = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+};
+
+function getSafeLocalStorage(): SafeStorage | null {
+  try {
+    if (typeof globalThis === "undefined") return null;
+    const maybeStorage = (globalThis as any).localStorage as
+      | SafeStorage
+      | undefined;
+
+    if (!maybeStorage) return null;
+    if (
+      typeof maybeStorage.getItem !== "function" ||
+      typeof maybeStorage.setItem !== "function"
+    ) {
+      return null;
+    }
+
+    return maybeStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getSongCacheKey(songId: any) {
+  return String(songId);
+}
+
+function persistAnalyzedAudioCache() {
+  try {
+    const localStorageRef = getSafeLocalStorage();
+    if (!localStorageRef) return;
+
+    const persistedEntries: [string, CachedAnalyzedData][] = [];
+    const seenSongIds = new Set<string>();
+
+    for (let i = recentPlayedSongIds.length - 1; i >= 0; i--) {
+      const songId = recentPlayedSongIds[i];
+      if (seenSongIds.has(songId)) continue;
+      seenSongIds.add(songId);
+
+      const cached = analysedAudioCache.get(songId);
+      if (!cached) continue;
+      persistedEntries.push([songId, cached]);
+    }
+
+    localStorageRef.setItem(CACHE_STORAGE_KEY, JSON.stringify(persistedEntries));
+    localStorageRef.setItem(HISTORY_STORAGE_KEY, JSON.stringify(recentPlayedSongIds));
+  } catch (error) {
+    console.warn("[AudioVisualiser] Failed to persist analyzed cache:", error);
+  }
+}
+
+function scheduleCachePersistence() {
+  if (persistCacheTimeout !== null) {
+    clearTimeout(persistCacheTimeout);
+  }
+
+  persistCacheTimeout = setTimeout(() => {
+    persistCacheTimeout = null;
+    persistAnalyzedAudioCache();
+  }, 400);
+}
+
+function restorePersistedAnalyzedAudioCache() {
+  try {
+    const localStorageRef = getSafeLocalStorage();
+    if (!localStorageRef) return;
+
+    const rawHistory = localStorageRef.getItem(HISTORY_STORAGE_KEY);
+    if (rawHistory) {
+      const parsedHistory = JSON.parse(rawHistory);
+      if (Array.isArray(parsedHistory)) {
+        for (const songId of parsedHistory.slice(-RECENT_SONG_HISTORY_LIMIT)) {
+          recentPlayedSongIds.push(String(songId));
+        }
+      }
+    }
+
+    const rawCache = localStorageRef.getItem(CACHE_STORAGE_KEY);
+    if (rawCache) {
+      const parsedCache = JSON.parse(rawCache) as [string, CachedAnalyzedData][];
+      if (Array.isArray(parsedCache)) {
+        for (const entry of parsedCache) {
+          const songId = entry?.[0];
+          const cached = entry?.[1];
+
+          if (
+            typeof songId !== "string" ||
+            !cached ||
+            !Array.isArray(cached.timeline) ||
+            !Array.isArray(cached.values)
+          ) {
+            continue;
+          }
+
+          analysedAudioCache.set(songId, {
+            timeline: cached.timeline,
+            values: cached.values,
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[AudioVisualiser] Failed to restore analyzed cache:", error);
+  }
+}
+
+restorePersistedAnalyzedAudioCache();
+
 let currentFile: ItemData | null = null;
 let nextFile: ItemData | null = null;
 
@@ -238,6 +362,39 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function applyCachedAnalysis(file: ItemData): boolean {
+  const cacheKey = getSongCacheKey(file.id);
+  const cached = analysedAudioCache.get(cacheKey);
+  if (!cached) return false;
+
+  file.timeline = cached.timeline;
+  file.values = cached.values;
+  file.lastTimelineIndex = 0;
+  file.wasAnalyzed = true;
+  return true;
+}
+
+function pruneAnalyzedAudioCache() {
+  const recentSet = new Set(recentPlayedSongIds);
+
+  for (const cachedSongId of analysedAudioCache.keys()) {
+    if (!recentSet.has(cachedSongId)) {
+      analysedAudioCache.delete(cachedSongId);
+    }
+  }
+
+  scheduleCachePersistence();
+}
+
+function markSongPlayed(songId: any) {
+  recentPlayedSongIds.push(getSongCacheKey(songId));
+  if (recentPlayedSongIds.length > RECENT_SONG_HISTORY_LIMIT) {
+    recentPlayedSongIds.shift();
+  }
+
+  pruneAnalyzedAudioCache();
+}
+
 function getClosestMagnitude(
   file: ItemData,
   timeMs: number,
@@ -407,6 +564,7 @@ export function updateIntervalTiming() {
 MediaItem.onMediaTransition(unloads, async (item) => {
   attachVisualiser();
   updateAlbumArtColor(item).catch(console.error);
+  markSongPlayed(item.id);
 
   if (!currentFile || currentFile.id !== item.id) {
     if (nextFile && nextFile.id === item.id) {
@@ -416,7 +574,9 @@ MediaItem.onMediaTransition(unloads, async (item) => {
     } else {
       const downloadLocation = await getDownloadPathForItem(item);
       currentFile = { id: item.id, downloadLocation };
-      downloadAndAnalyze(currentFile).catch(console.error);
+      if (!applyCachedAnalysis(currentFile)) {
+        downloadAndAnalyze(currentFile).catch(console.error);
+      }
     }
   }
 
@@ -424,7 +584,9 @@ MediaItem.onMediaTransition(unloads, async (item) => {
   if (nextItem && (!nextFile || nextFile.id !== nextItem.id)) {
     const downloadLocation = await getDownloadPathForItem(nextItem);
     nextFile = { id: nextItem.id, downloadLocation };
-    downloadAndAnalyze(nextFile).catch(console.error);
+    if (!applyCachedAnalysis(nextFile)) {
+      downloadAndAnalyze(nextFile).catch(console.error);
+    }
   }
 });
 
@@ -441,6 +603,10 @@ async function getDownloadPathForItem(item: MediaItem): Promise<string> {
 }
 
 async function downloadAndAnalyze(file: ItemData) {
+  if (applyCachedAnalysis(file)) {
+    return;
+  }
+
   await fileDownload(file);
   file.hasDownloadFinished = true;
 
@@ -453,6 +619,13 @@ async function downloadAndAnalyze(file: ItemData) {
   file.values = entries.map((entry) => entry[1]);
   file.lastTimelineIndex = 0;
   file.wasAnalyzed = true;
+
+  analysedAudioCache.set(getSongCacheKey(file.id), {
+    timeline: file.timeline,
+    values: file.values,
+  });
+
+  scheduleCachePersistence();
 }
 
 async function fileDownload(file: ItemData) {
