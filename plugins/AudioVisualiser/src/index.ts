@@ -1,7 +1,7 @@
 import type { LunaUnload } from "@luna/core";
-import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import { MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import ColorThief from "colorthief";
 import { analyse } from "./analyser.native";
-import { clear } from "console";
 
 export const unloads = new Set<LunaUnload>();
 
@@ -13,8 +13,134 @@ type ItemData = {
   downloadLocation: string;
   hasDownloadFinished?: boolean;
   wasAnalyzed?: boolean;
-  data?: Map<number, number[]>;
+  timeline?: number[];
+  values?: number[][];
+  lastTimelineIndex?: number;
 };
+
+type CachedAnalyzedData = {
+  timeline: number[];
+  values: number[][];
+};
+
+const RECENT_SONG_HISTORY_LIMIT = 200;
+const CACHE_STORAGE_KEY = "AudioVisualiser.analysedAudioCache.v1";
+const HISTORY_STORAGE_KEY = "AudioVisualiser.recentSongs.v1";
+const analysedAudioCache = new Map<string, CachedAnalyzedData>();
+const recentPlayedSongIds: string[] = [];
+let persistCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+
+type SafeStorage = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+};
+
+function getSafeLocalStorage(): SafeStorage | null {
+  try {
+    if (typeof globalThis === "undefined") return null;
+    const maybeStorage = (globalThis as any).localStorage as
+      | SafeStorage
+      | undefined;
+
+    if (!maybeStorage) return null;
+    if (
+      typeof maybeStorage.getItem !== "function" ||
+      typeof maybeStorage.setItem !== "function"
+    ) {
+      return null;
+    }
+
+    return maybeStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getSongCacheKey(songId: any) {
+  return String(songId);
+}
+
+function persistAnalyzedAudioCache() {
+  try {
+    const localStorageRef = getSafeLocalStorage();
+    if (!localStorageRef) return;
+
+    const persistedEntries: [string, CachedAnalyzedData][] = [];
+    const seenSongIds = new Set<string>();
+
+    for (let i = recentPlayedSongIds.length - 1; i >= 0; i--) {
+      const songId = recentPlayedSongIds[i];
+      if (seenSongIds.has(songId)) continue;
+      seenSongIds.add(songId);
+
+      const cached = analysedAudioCache.get(songId);
+      if (!cached) continue;
+      persistedEntries.push([songId, cached]);
+    }
+
+    localStorageRef.setItem(CACHE_STORAGE_KEY, JSON.stringify(persistedEntries));
+    localStorageRef.setItem(HISTORY_STORAGE_KEY, JSON.stringify(recentPlayedSongIds));
+  } catch (error) {
+    console.warn("[AudioVisualiser] Failed to persist analyzed cache:", error);
+  }
+}
+
+function scheduleCachePersistence() {
+  if (persistCacheTimeout !== null) {
+    clearTimeout(persistCacheTimeout);
+  }
+
+  persistCacheTimeout = setTimeout(() => {
+    persistCacheTimeout = null;
+    persistAnalyzedAudioCache();
+  }, 400);
+}
+
+function restorePersistedAnalyzedAudioCache() {
+  try {
+    const localStorageRef = getSafeLocalStorage();
+    if (!localStorageRef) return;
+
+    const rawHistory = localStorageRef.getItem(HISTORY_STORAGE_KEY);
+    if (rawHistory) {
+      const parsedHistory = JSON.parse(rawHistory);
+      if (Array.isArray(parsedHistory)) {
+        for (const songId of parsedHistory.slice(-RECENT_SONG_HISTORY_LIMIT)) {
+          recentPlayedSongIds.push(String(songId));
+        }
+      }
+    }
+
+    const rawCache = localStorageRef.getItem(CACHE_STORAGE_KEY);
+    if (rawCache) {
+      const parsedCache = JSON.parse(rawCache) as [string, CachedAnalyzedData][];
+      if (Array.isArray(parsedCache)) {
+        for (const entry of parsedCache) {
+          const songId = entry?.[0];
+          const cached = entry?.[1];
+
+          if (
+            typeof songId !== "string" ||
+            !cached ||
+            !Array.isArray(cached.timeline) ||
+            !Array.isArray(cached.values)
+          ) {
+            continue;
+          }
+
+          analysedAudioCache.set(songId, {
+            timeline: cached.timeline,
+            values: cached.values,
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[AudioVisualiser] Failed to restore analyzed cache:", error);
+  }
+}
+
+restorePersistedAnalyzedAudioCache();
 
 let currentFile: ItemData | null = null;
 let nextFile: ItemData | null = null;
@@ -22,6 +148,12 @@ let nextFile: ItemData | null = null;
 let currentPlayTime = 0;
 let lastPlaybackTime = 0;
 let lastPlaybackUpdate = 0;
+
+const colorThief = new ColorThief();
+const coverImage = new Image();
+
+let albumArtColor = "rgb(51, 255, 238)";
+let currentVisualiserColor = settings.staticColor;
 
 const visContainer = document.createElement("div");
 visContainer.style.position = "absolute";
@@ -31,25 +163,190 @@ visContainer.style.width = "100%";
 visContainer.style.height = "100%";
 visContainer.style.display = "flex";
 visContainer.style.alignItems = "flex-end";
-visContainer.style.justifyContent = "space-between";
+visContainer.style.justifyContent = "stretch";
 visContainer.style.pointerEvents = "none";
-visContainer.style.opacity = "0.3";
 visContainer.style.zIndex = "1";
 visContainer.style.borderRadius = "inherit";
 visContainer.style.overflow = "hidden";
 
-const bars: HTMLDivElement[] = [];
-for (let i = 0; i < 8; i++) {
-  const bar = document.createElement("div");
-  bar.style.width = "12.5%";
-  bar.style.height = "0%";
-  bar.style.backgroundColor = "rgb(51, 255, 238)";
-  bar.style.transition = "height 0.1s linear";
-  visContainer.appendChild(bar);
-  bars.push(bar);
+let bars: HTMLDivElement[] = [];
+let lastMagnitudes: number[] = [];
+let targetMagnitudes = new Array(8).fill(0);
+let displayTargetMagnitudes = new Array(8).fill(0);
+let peak = 50;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
-unloads.add(() => visContainer.remove());
+function getAppliedContainerOpacity() {
+  if (settings.hideWhenPaused && !PlayState.playing) return "0";
+  return `${clamp(settings.visualiserOpacity, 0, 100) / 100}`;
+}
+
+function getColorModeColor() {
+  if (settings.colorMode === "albumArt") return albumArtColor;
+  return settings.staticColor;
+}
+
+function applyBarStyle() {
+  const glowPx = clamp(settings.glowStrength, 0, 40);
+
+  for (const bar of bars) {
+    bar.style.backgroundColor = currentVisualiserColor;
+    bar.style.backgroundImage = "none";
+    bar.style.border = "none";
+    bar.style.boxShadow = "none";
+
+    if (settings.barStyle === "rounded") {
+      bar.style.borderRadius = "10px 10px 0 0";
+      continue;
+    }
+
+    if (settings.barStyle === "sharp") {
+      bar.style.borderRadius = "0";
+      continue;
+    }
+
+    if (settings.barStyle === "capsule") {
+      bar.style.borderRadius = "999px";
+      continue;
+    }
+
+    if (settings.barStyle === "glow") {
+      bar.style.borderRadius = "10px 10px 0 0";
+      bar.style.boxShadow = `0 0 ${glowPx}px ${currentVisualiserColor}`;
+      continue;
+    }
+
+    if (settings.barStyle === "gradient") {
+      bar.style.borderRadius = "10px 10px 0 0";
+      bar.style.backgroundImage = `linear-gradient(to top, ${currentVisualiserColor}, ${settings.gradientEndColor})`;
+      continue;
+    }
+
+    if (settings.barStyle === "segmented") {
+      bar.style.borderRadius = "8px 8px 0 0";
+      bar.style.backgroundImage = `repeating-linear-gradient(to top, ${currentVisualiserColor} 0 8px, transparent 8px 12px)`;
+      continue;
+    }
+
+    if (settings.barStyle === "outline") {
+      bar.style.borderRadius = "8px 8px 0 0";
+      bar.style.backgroundColor = "transparent";
+      bar.style.border = `2px solid ${currentVisualiserColor}`;
+    }
+  }
+}
+
+function rebuildBars() {
+  for (const bar of bars) {
+    bar.remove();
+  }
+
+  bars = [];
+
+  const count = clamp(Math.floor(settings.barCount), 2, 128);
+  settings.barCount = count;
+  visContainer.style.gap = `${clamp(settings.barGap, 0, 20)}px`;
+
+  for (let i = 0; i < count; i++) {
+    const bar = document.createElement("div");
+    bar.style.flex = "1 1 0";
+    bar.style.height = "100%";
+    bar.style.transform = "scaleY(0)";
+    bar.style.transformOrigin = settings.growFromTop
+      ? "center top"
+      : "center bottom";
+    bar.style.willChange = "transform, opacity";
+    bar.style.transition = "none";
+    bar.style.backgroundColor = currentVisualiserColor;
+    bar.style.opacity = "0";
+    visContainer.appendChild(bar);
+    bars.push(bar);
+  }
+
+  lastMagnitudes = new Array(count).fill(0);
+  applyBarStyle();
+}
+
+export function applyVisualiserSettings() {
+  settings.barCount = clamp(Math.floor(settings.barCount), 2, 128);
+  settings.barGap = clamp(Math.floor(settings.barGap), 0, 20);
+  settings.smoothing = clamp(Math.floor(settings.smoothing), 1, 100);
+  settings.sensitivity = clamp(Math.floor(settings.sensitivity), 20, 400);
+  settings.peakDecay = clamp(Math.floor(settings.peakDecay), 90, 100);
+  settings.minHeight = clamp(Math.floor(settings.minHeight), 0, 40);
+  settings.maxHeight = clamp(Math.floor(settings.maxHeight), 20, 100);
+  settings.glowStrength = clamp(Math.floor(settings.glowStrength), 0, 40);
+  settings.slopeAggression = clamp(Math.floor(settings.slopeAggression), 0, 100);
+  settings.visualiserOpacity = clamp(Math.floor(settings.visualiserOpacity), 0, 100);
+
+  if (settings.minHeight > settings.maxHeight) {
+    settings.minHeight = settings.maxHeight;
+  }
+
+  currentVisualiserColor = getColorModeColor();
+
+  if (bars.length !== settings.barCount) {
+    rebuildBars();
+  }
+
+  visContainer.style.alignItems = settings.growFromTop ? "flex-start" : "flex-end";
+  visContainer.style.opacity = getAppliedContainerOpacity();
+  visContainer.style.gap = `${settings.barGap}px`;
+
+  const transformOrigin = settings.growFromTop
+    ? "center top"
+    : "center bottom";
+  for (const bar of bars) {
+    bar.style.transformOrigin = transformOrigin;
+  }
+
+  applyBarStyle();
+  displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
+}
+
+function clampReadableColor(
+  [r, g, b]: [number, number, number],
+  minLuminance = 80,
+): [number, number, number] {
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  if (luminance >= minLuminance) return [r, g, b];
+
+  const factor = minLuminance / Math.max(luminance, 1);
+  return [
+    Math.min(255, Math.round(r * factor)),
+    Math.min(255, Math.round(g * factor)),
+    Math.min(255, Math.round(b * factor)),
+  ];
+}
+
+let pendingCoverColorToken = 0;
+async function updateAlbumArtColor(item: MediaItem) {
+  const url = await item.coverUrl();
+  if (!url) return;
+
+  const token = ++pendingCoverColorToken;
+  coverImage.src = url;
+
+  coverImage.onload = () => {
+    if (token !== pendingCoverColorToken) return;
+
+    try {
+      const dominantColor = colorThief.getColor(coverImage) as [
+        number,
+        number,
+        number,
+      ];
+      const safeColor = clampReadableColor(dominantColor);
+      albumArtColor = `rgb(${safeColor[0]}, ${safeColor[1]}, ${safeColor[2]})`;
+      currentVisualiserColor = getColorModeColor();
+    } catch (error) {
+      console.error("Failed to extract album art color:", error);
+    }
+  };
+}
 
 function attachVisualiser() {
   const footer = document.getElementById("footerPlayer");
@@ -65,55 +362,180 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getClosestMagnitude(
-  data: Map<number, number[]>,
-  timeMs: number,
-): number[] | undefined {
-  let closestKey: number | undefined;
-  let smallestDiff = Infinity;
+function applyCachedAnalysis(file: ItemData): boolean {
+  const cacheKey = getSongCacheKey(file.id);
+  const cached = analysedAudioCache.get(cacheKey);
+  if (!cached) return false;
 
-  for (const key of data.keys()) {
-    const diff = Math.abs(key - timeMs);
-    if (diff < smallestDiff) {
-      smallestDiff = diff;
-      closestKey = key;
+  file.timeline = cached.timeline;
+  file.values = cached.values;
+  file.lastTimelineIndex = 0;
+  file.wasAnalyzed = true;
+  return true;
+}
+
+function pruneAnalyzedAudioCache() {
+  const recentSet = new Set(recentPlayedSongIds);
+
+  for (const cachedSongId of analysedAudioCache.keys()) {
+    if (!recentSet.has(cachedSongId)) {
+      analysedAudioCache.delete(cachedSongId);
     }
   }
 
-  return closestKey !== undefined ? data.get(closestKey) : undefined;
+  scheduleCachePersistence();
 }
 
-let lastMagnitudes = new Array(8).fill(0);
-let targetMagnitudes = new Array(8).fill(0);
-let peak = 50;
+function markSongPlayed(songId: any) {
+  recentPlayedSongIds.push(getSongCacheKey(songId));
+  if (recentPlayedSongIds.length > RECENT_SONG_HISTORY_LIMIT) {
+    recentPlayedSongIds.shift();
+  }
+
+  pruneAnalyzedAudioCache();
+}
+
+function getClosestMagnitude(
+  file: ItemData,
+  timeMs: number,
+): number[] | undefined {
+  const timeline = file.timeline;
+  const values = file.values;
+  if (!timeline || !values || timeline.length === 0) return undefined;
+
+  let index = clamp(file.lastTimelineIndex ?? 0, 0, timeline.length - 1);
+
+  while (index + 1 < timeline.length && timeline[index + 1] <= timeMs) {
+    index++;
+  }
+
+  while (index > 0 && timeline[index] > timeMs) {
+    index--;
+  }
+
+  const nextIndex = Math.min(index + 1, timeline.length - 1);
+  const currentDistance = Math.abs(timeline[index] - timeMs);
+  const nextDistance = Math.abs(timeline[nextIndex] - timeMs);
+  const chosenIndex = nextDistance < currentDistance ? nextIndex : index;
+
+  file.lastTimelineIndex = chosenIndex;
+
+  return values[chosenIndex];
+}
+
+function resampleMagnitudes(values: number[], targetCount: number): number[] {
+  if (targetCount <= 0) return [];
+  if (values.length === 0) return new Array(targetCount).fill(0);
+  if (targetCount === 1) return [values.reduce((sum, v) => sum + v, 0) / values.length];
+
+  const result = new Array(targetCount).fill(0);
+  const scale = (values.length - 1) / (targetCount - 1);
+
+  for (let i = 0; i < targetCount; i++) {
+    const sourceIndex = i * scale;
+    const left = Math.floor(sourceIndex);
+    const right = Math.min(Math.ceil(sourceIndex), values.length - 1);
+    const mix = sourceIndex - left;
+    const leftValue = values[left] ?? 0;
+    const rightValue = values[right] ?? leftValue;
+    result[i] = leftValue + (rightValue - leftValue) * mix;
+  }
+
+  return result;
+}
+
+function applyMirrorMode(values: number[], totalBars: number): number[] {
+  if (!settings.mirrorMode) return values;
+
+  const halfCount = Math.ceil(totalBars / 2);
+  const leftSide = resampleMagnitudes(values, halfCount);
+
+  if (totalBars % 2 === 0) {
+    return [...leftSide, ...[...leftSide].reverse()];
+  }
+
+  return [...leftSide, ...leftSide.slice(0, -1).reverse()];
+}
+
+function applySlope(values: number[]): number[] {
+  if (!settings.slopeTowardCenter || values.length <= 1) return values;
+
+  const center = (values.length - 1) / 2;
+  const maxDistance = Math.max(center, 1);
+  const aggression = clamp(settings.slopeAggression, 0, 100) / 100;
+
+  return values.map((value, index) => {
+    const normalizedDistance = Math.abs(index - center) / maxDistance;
+    const multiplier = Math.max(0, 1 - normalizedDistance * aggression);
+    return value * multiplier;
+  });
+}
+
+function getDisplayMagnitudes(magnitudes: number[]): number[] {
+  const targetCount = clamp(Math.floor(settings.barCount), 2, 128);
+  const sensitivityScale = clamp(settings.sensitivity, 20, 400) / 100;
+  const scaledMagnitudes = magnitudes.map((value) => value * sensitivityScale);
+  const mirrored = applyMirrorMode(scaledMagnitudes, targetCount);
+  const resized = settings.mirrorMode
+    ? mirrored
+    : resampleMagnitudes(scaledMagnitudes, targetCount);
+  return applySlope(resized);
+}
 
 function animate() {
-  const maxTarget = Math.max(...targetMagnitudes);
+  const nextOpacity = getAppliedContainerOpacity();
+  if (visContainer.style.opacity !== nextOpacity) {
+    visContainer.style.opacity = nextOpacity;
+  }
+
+  let maxTarget = 1;
+  for (let i = 0; i < displayTargetMagnitudes.length; i++) {
+    const value = displayTargetMagnitudes[i];
+    if (value > maxTarget) maxTarget = value;
+  }
+
   if (maxTarget > peak) peak = maxTarget;
-  peak *= 0.98;
+  peak *= clamp(settings.peakDecay, 90, 100) / 100;
 
-  for (let i = 0; i < 8; i++) {
-    lastMagnitudes[i] += (targetMagnitudes[i] - lastMagnitudes[i]) * 0.25;
+  if (peak < 1) peak = 1;
 
-    const height = Math.min(lastMagnitudes[i] / peak, 1) * 100;
-    bars[i].style.height = `${height}%`;
+  const smoothingFactor = Math.max(0.02, 1 / (settings.smoothing * 0.2 + 1));
+  const minHeight = clamp(settings.minHeight, 0, 40);
+  const maxHeightLimit = clamp(settings.maxHeight, 20, 100);
+
+  for (let i = 0; i < bars.length; i++) {
+    const target = displayTargetMagnitudes[i] ?? 0;
+    lastMagnitudes[i] += (target - lastMagnitudes[i]) * smoothingFactor;
+
+    const normalizedHeight = Math.min(lastMagnitudes[i] / peak, 1) * 100;
+    const height = clamp(normalizedHeight, minHeight, maxHeightLimit);
+    bars[i].style.transform = `scaleY(${height / 100})`;
 
     const intensity = Math.min(height / 100, 1);
-    bars[i].style.backgroundColor = `rgba(51, 255, 238, ${
-      0.3 + 0.7 * intensity
-    })`;
+    if (settings.barStyle !== "gradient" && settings.barStyle !== "outline") {
+      bars[i].style.backgroundColor = currentVisualiserColor;
+    }
+
+    if (settings.barStyle === "glow") {
+      bars[i].style.boxShadow = `0 0 ${clamp(settings.glowStrength, 0, 40) * (0.25 + intensity)}px ${currentVisualiserColor}`;
+    }
+
+    bars[i].style.opacity = `${0.2 + 0.8 * intensity}`;
   }
 
   requestAnimationFrame(animate);
 }
 
+rebuildBars();
+applyVisualiserSettings();
+unloads.add(() => visContainer.remove());
 requestAnimationFrame(animate);
 
 let visInterval: NodeJS.Timeout;
 
 async function createVisInterval() {
   visInterval = setInterval(() => {
-    if (!currentFile?.data || !currentFile.wasAnalyzed) return;
+    if (!currentFile?.timeline || !currentFile.wasAnalyzed) return;
     if (!PlayState.playing) return;
 
     const now = performance.now();
@@ -122,10 +544,11 @@ async function createVisInterval() {
     currentPlayTime = lastPlaybackTime + elapsed;
 
     const timeMs = Math.floor(currentPlayTime * 1000);
-    const magnitudes = getClosestMagnitude(currentFile.data, timeMs);
+    const magnitudes = getClosestMagnitude(currentFile, timeMs);
 
     if (magnitudes) {
-      targetMagnitudes = magnitudes;
+      targetMagnitudes = magnitudes.map((value) => (Number.isFinite(value) ? value : 0));
+      displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
     }
   }, settings.updateInterval);
 }
@@ -140,15 +563,20 @@ export function updateIntervalTiming() {
 
 MediaItem.onMediaTransition(unloads, async (item) => {
   attachVisualiser();
+  updateAlbumArtColor(item).catch(console.error);
+  markSongPlayed(item.id);
 
   if (!currentFile || currentFile.id !== item.id) {
     if (nextFile && nextFile.id === item.id) {
       currentFile = nextFile;
+      currentFile.lastTimelineIndex = 0;
       nextFile = null;
     } else {
       const downloadLocation = await getDownloadPathForItem(item);
       currentFile = { id: item.id, downloadLocation };
-      downloadAndAnalyze(currentFile).catch(console.error);
+      if (!applyCachedAnalysis(currentFile)) {
+        downloadAndAnalyze(currentFile).catch(console.error);
+      }
     }
   }
 
@@ -156,7 +584,9 @@ MediaItem.onMediaTransition(unloads, async (item) => {
   if (nextItem && (!nextFile || nextFile.id !== nextItem.id)) {
     const downloadLocation = await getDownloadPathForItem(nextItem);
     nextFile = { id: nextItem.id, downloadLocation };
-    downloadAndAnalyze(nextFile).catch(console.error);
+    if (!applyCachedAnalysis(nextFile)) {
+      downloadAndAnalyze(nextFile).catch(console.error);
+    }
   }
 });
 
@@ -173,11 +603,29 @@ async function getDownloadPathForItem(item: MediaItem): Promise<string> {
 }
 
 async function downloadAndAnalyze(file: ItemData) {
+  if (applyCachedAnalysis(file)) {
+    return;
+  }
+
   await fileDownload(file);
   file.hasDownloadFinished = true;
 
-  file.data = await analyse(file.downloadLocation);
+  const analysedData = await analyse(file.downloadLocation);
+  const entries = Array.from(analysedData.entries()).sort(
+    (left, right) => left[0] - right[0],
+  );
+
+  file.timeline = entries.map((entry) => entry[0]);
+  file.values = entries.map((entry) => entry[1]);
+  file.lastTimelineIndex = 0;
   file.wasAnalyzed = true;
+
+  analysedAudioCache.set(getSongCacheKey(file.id), {
+    timeline: file.timeline,
+    values: file.values,
+  });
+
+  scheduleCachePersistence();
 }
 
 async function fileDownload(file: ItemData) {

@@ -9,6 +9,8 @@
 	"main": "./src/index.ts",
 	"type": "module",
 	"dependencies": {
+		"@types/colorthief": "^2.6.1",
+		"colorthief": "^2.6.0",
 		"dsp.js": "^1.0.1",
 		"fft-js": "^0.0.12",
 		"kissfft-js": "^0.1.8"
