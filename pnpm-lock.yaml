@@ -47,6 +47,12 @@ importers:
 
   plugins/AudioVisualiser:
     dependencies:
+      '@types/colorthief':
+        specifier: ^2.6.1
+        version: 2.6.1
+      colorthief:
+        specifier: ^2.6.0
+        version: 2.6.0
       dsp.js:
         specifier: ^1.0.1
         version: 1.0.1
