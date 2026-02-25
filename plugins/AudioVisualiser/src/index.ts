@@ -60,6 +60,40 @@ function getSongCacheKey(songId: any) {
   return String(songId);
 }
 
+function isQuotaExceededError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const maybeError = error as { name?: string; code?: number };
+  return (
+    maybeError.name === "QuotaExceededError" ||
+    maybeError.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    maybeError.code === 22 ||
+    maybeError.code === 1014
+  );
+}
+
+function downsampleCachedData(
+  cached: CachedAnalyzedData,
+  stride: number,
+): CachedAnalyzedData {
+  if (stride <= 1) return cached;
+
+  const timeline: number[] = [];
+  const values: number[][] = [];
+
+  for (let i = 0; i < cached.timeline.length; i += stride) {
+    timeline.push(cached.timeline[i]);
+    values.push(cached.values[i]);
+  }
+
+  if (timeline.length === 0 && cached.timeline.length > 0) {
+    timeline.push(cached.timeline[0]);
+    values.push(cached.values[0]);
+  }
+
+  return { timeline, values };
+}
+
 function persistAnalyzedAudioCache() {
   try {
     const localStorageRef = getSafeLocalStorage();
@@ -78,8 +112,57 @@ function persistAnalyzedAudioCache() {
       persistedEntries.push([songId, cached]);
     }
 
-    localStorageRef.setItem(CACHE_STORAGE_KEY, JSON.stringify(persistedEntries));
-    localStorageRef.setItem(HISTORY_STORAGE_KEY, JSON.stringify(recentPlayedSongIds));
+    const persistedHistory = recentPlayedSongIds.slice(
+      -RECENT_SONG_HISTORY_LIMIT,
+    );
+
+    let maxSongs = persistedEntries.length;
+    let stride = 1;
+
+    while (true) {
+      const trimmedEntries = persistedEntries
+        .slice(0, maxSongs)
+        .map(([songId, cached]) => [
+          songId,
+          downsampleCachedData(cached, stride),
+        ] as [string, CachedAnalyzedData]);
+
+      try {
+        localStorageRef.setItem(
+          CACHE_STORAGE_KEY,
+          JSON.stringify(trimmedEntries),
+        );
+        localStorageRef.setItem(
+          HISTORY_STORAGE_KEY,
+          JSON.stringify(persistedHistory),
+        );
+        break;
+      } catch (error) {
+        if (!isQuotaExceededError(error)) {
+          throw error;
+        }
+
+        if (maxSongs > 1) {
+          maxSongs = Math.max(1, Math.floor(maxSongs * 0.7));
+          continue;
+        }
+
+        if (stride < 64) {
+          stride *= 2;
+          continue;
+        }
+
+        localStorageRef.setItem(CACHE_STORAGE_KEY, "[]");
+        localStorageRef.setItem(
+          HISTORY_STORAGE_KEY,
+          JSON.stringify(persistedHistory),
+        );
+        console.warn(
+          "[AudioVisualiser] Persisted cache exceeded storage quota and was trimmed to empty.",
+        );
+        break;
+      }
+    }
   } catch (error) {
     console.warn("[AudioVisualiser] Failed to persist analyzed cache:", error);
   }
@@ -113,7 +196,10 @@ function restorePersistedAnalyzedAudioCache() {
 
     const rawCache = localStorageRef.getItem(CACHE_STORAGE_KEY);
     if (rawCache) {
-      const parsedCache = JSON.parse(rawCache) as [string, CachedAnalyzedData][];
+      const parsedCache = JSON.parse(rawCache) as [
+        string,
+        CachedAnalyzedData,
+      ][];
       if (Array.isArray(parsedCache)) {
         for (const entry of parsedCache) {
           const songId = entry?.[0];
@@ -279,8 +365,16 @@ export function applyVisualiserSettings() {
   settings.minHeight = clamp(Math.floor(settings.minHeight), 0, 40);
   settings.maxHeight = clamp(Math.floor(settings.maxHeight), 20, 100);
   settings.glowStrength = clamp(Math.floor(settings.glowStrength), 0, 40);
-  settings.slopeAggression = clamp(Math.floor(settings.slopeAggression), 0, 100);
-  settings.visualiserOpacity = clamp(Math.floor(settings.visualiserOpacity), 0, 100);
+  settings.slopeAggression = clamp(
+    Math.floor(settings.slopeAggression),
+    0,
+    100,
+  );
+  settings.visualiserOpacity = clamp(
+    Math.floor(settings.visualiserOpacity),
+    0,
+    100,
+  );
 
   if (settings.minHeight > settings.maxHeight) {
     settings.minHeight = settings.maxHeight;
@@ -292,13 +386,13 @@ export function applyVisualiserSettings() {
     rebuildBars();
   }
 
-  visContainer.style.alignItems = settings.growFromTop ? "flex-start" : "flex-end";
+  visContainer.style.alignItems = settings.growFromTop
+    ? "flex-start"
+    : "flex-end";
   visContainer.style.opacity = getAppliedContainerOpacity();
   visContainer.style.gap = `${settings.barGap}px`;
 
-  const transformOrigin = settings.growFromTop
-    ? "center top"
-    : "center bottom";
+  const transformOrigin = settings.growFromTop ? "center top" : "center bottom";
   for (const bar of bars) {
     bar.style.transformOrigin = transformOrigin;
   }
@@ -426,7 +520,8 @@ function getClosestMagnitude(
 function resampleMagnitudes(values: number[], targetCount: number): number[] {
   if (targetCount <= 0) return [];
   if (values.length === 0) return new Array(targetCount).fill(0);
-  if (targetCount === 1) return [values.reduce((sum, v) => sum + v, 0) / values.length];
+  if (targetCount === 1)
+    return [values.reduce((sum, v) => sum + v, 0) / values.length];
 
   const result = new Array(targetCount).fill(0);
   const scale = (values.length - 1) / (targetCount - 1);
@@ -517,7 +612,8 @@ function animate() {
     }
 
     if (settings.barStyle === "glow") {
-      bars[i].style.boxShadow = `0 0 ${clamp(settings.glowStrength, 0, 40) * (0.25 + intensity)}px ${currentVisualiserColor}`;
+      bars[i].style.boxShadow =
+        `0 0 ${clamp(settings.glowStrength, 0, 40) * (0.25 + intensity)}px ${currentVisualiserColor}`;
     }
 
     bars[i].style.opacity = `${0.2 + 0.8 * intensity}`;
@@ -547,7 +643,9 @@ async function createVisInterval() {
     const magnitudes = getClosestMagnitude(currentFile, timeMs);
 
     if (magnitudes) {
-      targetMagnitudes = magnitudes.map((value) => (Number.isFinite(value) ? value : 0));
+      targetMagnitudes = magnitudes.map((value) =>
+        Number.isFinite(value) ? value : 0,
+      );
       displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
     }
   }, settings.updateInterval);
