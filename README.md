@@ -68,6 +68,11 @@ Tidal Wave allows multiple people adding songs to the tidal queue. No addional t
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/utils
+- **Description**: Shared utility helpers for luna plugins
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/uwu-ifier
 - **Description**: UwU-ifies everything. Note: You have to restart the app after disabling this plugin.
 - **Version**: 0.0.0
