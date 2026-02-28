@@ -1,6 +1,12 @@
 import type { LunaUnload } from "@luna/core";
 import { MediaItem, PlayState, ipcRenderer } from "@luna/lib";
-import ColorThief from "colorthief";
+import {
+  clamp,
+  getCoverColorsFromMediaItem,
+  getSafeLocalStorage,
+  isQuotaExceededError,
+  sleep,
+} from "@jxnxsdev/utils";
 import { analyse } from "./analyser.native";
 
 export const unloads = new Set<LunaUnload>();
@@ -30,46 +36,8 @@ const analysedAudioCache = new Map<string, CachedAnalyzedData>();
 const recentPlayedSongIds: string[] = [];
 let persistCacheTimeout: ReturnType<typeof setTimeout> | null = null;
 
-type SafeStorage = {
-  getItem: (key: string) => string | null;
-  setItem: (key: string, value: string) => void;
-};
-
-function getSafeLocalStorage(): SafeStorage | null {
-  try {
-    if (typeof globalThis === "undefined") return null;
-    const maybeStorage = (globalThis as any).localStorage as
-      | SafeStorage
-      | undefined;
-
-    if (!maybeStorage) return null;
-    if (
-      typeof maybeStorage.getItem !== "function" ||
-      typeof maybeStorage.setItem !== "function"
-    ) {
-      return null;
-    }
-
-    return maybeStorage;
-  } catch {
-    return null;
-  }
-}
-
 function getSongCacheKey(songId: any) {
   return String(songId);
-}
-
-function isQuotaExceededError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-
-  const maybeError = error as { name?: string; code?: number };
-  return (
-    maybeError.name === "QuotaExceededError" ||
-    maybeError.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-    maybeError.code === 22 ||
-    maybeError.code === 1014
-  );
 }
 
 function downsampleCachedData(
@@ -122,10 +90,13 @@ function persistAnalyzedAudioCache() {
     while (true) {
       const trimmedEntries = persistedEntries
         .slice(0, maxSongs)
-        .map(([songId, cached]) => [
-          songId,
-          downsampleCachedData(cached, stride),
-        ] as [string, CachedAnalyzedData]);
+        .map(
+          ([songId, cached]) =>
+            [songId, downsampleCachedData(cached, stride)] as [
+              string,
+              CachedAnalyzedData,
+            ],
+        );
 
       try {
         localStorageRef.setItem(
@@ -235,9 +206,6 @@ let currentPlayTime = 0;
 let lastPlaybackTime = 0;
 let lastPlaybackUpdate = 0;
 
-const colorThief = new ColorThief();
-const coverImage = new Image();
-
 let albumArtColor = "rgb(51, 255, 238)";
 let currentVisualiserColor = settings.staticColor;
 
@@ -260,10 +228,6 @@ let lastMagnitudes: number[] = [];
 let targetMagnitudes = new Array(8).fill(0);
 let displayTargetMagnitudes = new Array(8).fill(0);
 let peak = 50;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
 
 function getAppliedContainerOpacity() {
   if (settings.hideWhenPaused && !PlayState.playing) return "0";
@@ -401,45 +365,21 @@ export function applyVisualiserSettings() {
   displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
 }
 
-function clampReadableColor(
-  [r, g, b]: [number, number, number],
-  minLuminance = 80,
-): [number, number, number] {
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  if (luminance >= minLuminance) return [r, g, b];
-
-  const factor = minLuminance / Math.max(luminance, 1);
-  return [
-    Math.min(255, Math.round(r * factor)),
-    Math.min(255, Math.round(g * factor)),
-    Math.min(255, Math.round(b * factor)),
-  ];
-}
-
 let pendingCoverColorToken = 0;
 async function updateAlbumArtColor(item: MediaItem) {
-  const url = await item.coverUrl();
-  if (!url) return;
-
   const token = ++pendingCoverColorToken;
-  coverImage.src = url;
+  try {
+    const coverColors = await getCoverColorsFromMediaItem(item, {
+      readable: true,
+      minLuminance: 80,
+    });
+    if (token !== pendingCoverColorToken || !coverColors) return;
 
-  coverImage.onload = () => {
-    if (token !== pendingCoverColorToken) return;
-
-    try {
-      const dominantColor = colorThief.getColor(coverImage) as [
-        number,
-        number,
-        number,
-      ];
-      const safeColor = clampReadableColor(dominantColor);
-      albumArtColor = `rgb(${safeColor[0]}, ${safeColor[1]}, ${safeColor[2]})`;
-      currentVisualiserColor = getColorModeColor();
-    } catch (error) {
-      console.error("Failed to extract album art color:", error);
-    }
-  };
+    albumArtColor = coverColors.primary;
+    currentVisualiserColor = getColorModeColor();
+  } catch (error) {
+    console.error("Failed to extract album art color:", error);
+  }
 }
 
 function attachVisualiser() {
@@ -450,10 +390,6 @@ function attachVisualiser() {
     footer.style.position = "relative";
     footer.appendChild(visContainer);
   }
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function applyCachedAnalysis(file: ItemData): boolean {

@@ -1,5 +1,10 @@
 import type { LunaUnload } from "@luna/core";
 import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import {
+    buildLyricMap,
+    getLyricLineAtTime,
+    getMediaItemSnapshot,
+} from "@jxnxsdev/utils";
 import { settings } from "./Settings";
 import "./lyricsWindow.native";
 import { openLyricsWindow as openWindowNative, closeWindow, sendIPC } from "./lyricsWindow.native";
@@ -28,39 +33,7 @@ unloads.add(() => {
 
 let lyricsMap: Map<number, string> = new Map();
 
-initialLoad();
-
-async function initialLoad() {
-    let mediaItem = await MediaItem.fromPlaybackContext();
-
-    if (!mediaItem) return;
-
-    const lyrics = await mediaItem.lyrics();
-    if (!lyrics) {
-        lyricsElement.textContent = "No lyrics loaded";
-        lyricsElement.style.display = "none";
-        lyricsMap = new Map();
-        return;
-    }
-
-    lyricsElement.style.display = "block";
-    lyricsElement.textContent = "...";
-
-    const map = new Map<number, string>();
-    for (const line of lyrics.subtitles.split("\n")) {
-        const [timePart, textPart] = line.split("]");
-        if (!textPart) continue;
-        const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-        const timeInSec = Math.floor(min * 60 + sec);
-        map.set(timeInSec, textPart.trim());
-    }
-
-    lyricsMap = map;
-}
-
-MediaItem.onMediaTransition(unloads, async (mediaItem) => {
-    if (!mediaItem) return;
-
+async function refreshLyricsMapForMediaItem(mediaItem: MediaItem): Promise<void> {
     const lyrics = await mediaItem.lyrics();
     if (!lyrics || !lyrics.subtitles) {
         lyricsElement.textContent = "No lyrics loaded";
@@ -71,43 +44,29 @@ MediaItem.onMediaTransition(unloads, async (mediaItem) => {
 
     lyricsElement.style.display = "block";
     lyricsElement.textContent = "...";
-
-    const map = new Map<number, string>();
-    for (const line of lyrics.subtitles.split("\n")) {
-        const [timePart, textPart] = line.split("]");
-        if (!textPart) continue;
-        const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-        const timeInSec = Math.floor(min * 60 + sec);
-        map.set(timeInSec, textPart.trim());
-    }
-
-    lyricsMap = map;
-});
-
-function getClosestTime(currentTime: number): number | null {
-    let closest: number | null = null;
-    let maxTime = -Infinity;
-
-    for (const [time] of lyricsMap) {
-        if (time <= currentTime && time > maxTime) {
-            maxTime = time;
-            closest = time;
-        }
-    }
-
-    return closest;
+    lyricsMap = buildLyricMap(lyrics.subtitles);
 }
+
+initialLoad();
+
+async function initialLoad() {
+    let mediaItem = await MediaItem.fromPlaybackContext();
+
+    if (!mediaItem) return;
+    await refreshLyricsMapForMediaItem(mediaItem);
+}
+
+MediaItem.onMediaTransition(unloads, async (mediaItem) => {
+    if (!mediaItem) return;
+    await refreshLyricsMapForMediaItem(mediaItem);
+});
 
 ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
     const signal = data.signal;
     if (signal !== "media.currenttime") return;
     const currentTime = Math.floor(Number(data.time));
-    const closest = getClosestTime(currentTime);
-    let line: string | undefined = "";
-    if (closest !== null) {
-        line = lyricsMap.get(closest);
-        if (line) lyricsElement.textContent = line;
-    }
+    const line = getLyricLineAtTime(lyricsMap, currentTime);
+    if (line) lyricsElement.textContent = line;
     
     if (!line || line.trim() === "") {
         lyricsElement.textContent = "...";
@@ -115,22 +74,17 @@ ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
 
     const mediaItem = await MediaItem.fromPlaybackContext();
     if (!mediaItem) return;
-    let title = await mediaItem.title();
-    let artist = await mediaItem.artist();
-    let coverUrl = await mediaItem.coverUrl();
-    let lyrics = await mediaItem.lyrics();
-
-    let songLength = await mediaItem.duration;
-    let songProgress = data.time;
+    const snapshot = await getMediaItemSnapshot(mediaItem);
+    const songProgress = data.time;
     
 
     sendIPC("lyev.update", JSON.stringify({
-        title: title || "Unknown Title",
-        artist: artist || "Unknown Artist",
-        coverUrl: coverUrl || "",
-        lyrics: lyrics || "",
+        title: snapshot.title,
+        artist: snapshot.artist,
+        coverUrl: snapshot.coverUrl,
+        lyrics: snapshot.lyrics,
         lyricsLine: line || "No lyrics available",
-        songLength: songLength || 0,
+        songLength: snapshot.duration,
         songProgress: songProgress || 0,
     }));
 });

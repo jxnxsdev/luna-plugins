@@ -52,7 +52,7 @@ export const setCredentialsNative = (
  */
 async function initializePlugin(): Promise<void> {
   try {
-    await startWebServer(2402);
+    await startWebServer(2402, settings.serverAccessScope);
     unloads.add(() => stopWebServer());
     await DatabaseService.initialize();
     await refreshTokenIfNeeded();
