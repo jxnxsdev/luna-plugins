@@ -1,6 +1,6 @@
 import { LunaUnload, Tracer } from "@luna/core";
 import { MediaItem, ContextMenu } from "@luna/lib";
-import QRCode from "qrcode";
+import { generateQrCodeDataUrl } from "@jxnxsdev/utils";
 
 export const unloads = new Set<LunaUnload>();
 export const { trace } = Tracer("[QRShare]");
@@ -121,11 +121,12 @@ async function generateAndShowQRCodeOverlay(
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    const qrDataUrl = await QRCode.toDataURL(url, {
+    const qrDataUrl = await generateQrCodeDataUrl(url, {
       width: QR_SIZE,
       margin: 1,
       errorCorrectionLevel: "H",
-      color: { dark: "#000000", light: "#FFFFFF" },
+      darkColor: "#000000",
+      lightColor: "#FFFFFF",
     });
 
     const qrImg = new Image();

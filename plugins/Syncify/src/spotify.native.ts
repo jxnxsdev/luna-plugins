@@ -31,7 +31,8 @@ async function ensureDataFile(): Promise<{ uuid: string }> {
 
 export async function openSpotifyTokenGenerator(): Promise<void> {
     const port = await webserver.getServerPort();
-    const url = `http://127.0.0.1:${port}/login`;
+    const basePath = await webserver.getServerBasePath();
+  const url = `http://127.0.0.1:${port}${basePath}/login`;
     try {
         await shell.openExternal(url);
     } catch (err) {

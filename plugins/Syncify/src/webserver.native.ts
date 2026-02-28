@@ -1,11 +1,17 @@
 import express, { Request, Response } from "express";
-import { createServer, Server } from "http";
+import {
+  EndpointAccessScope,
+  getSharedHttpServerInfo,
+  registerPluginHttpNamespace,
+  stopSharedHttpServerIfIdle,
+} from "@jxnxsdev/utils/native";
 
 import errorHtml from "file://assets/error.html?base64&minify";
 import successHtml from "file://assets/success.html?base64&minify";
 
-let app: express.Express;
-let server: Server;
+const PLUGIN_NAME = "syncify";
+let basePath = `/${PLUGIN_NAME}`;
+let unregisterNamespace: (() => Promise<void>) | null = null;
 
 let serverPort: number = 2402;
 
@@ -21,23 +27,24 @@ const decodedSuccessHtml = Buffer.from(successHtml, "base64").toString("utf-8");
  * Start the Express web server for Spotify OAuth authentication
  * @param port Port number to run the server on
  */
-export function startWebServer(port: number): void {
+export async function startWebServer(
+  port: number,
+  accessScope: EndpointAccessScope = "local",
+): Promise<void> {
   serverPort = port;
-  app = express();
-  server = createServer(app);
+  const router = express.Router();
+  router.use(express.json());
 
-  app.use(express.json());
-
-  app.get("/", (_req, res) => {
+  router.get("/", (_req, res) => {
     res.send("Syncify Web Server is running");
   });
 
-  app.get("/success.html", (_req, res) => {
+  router.get("/success.html", (_req, res) => {
     res.setHeader("Content-Type", "text/html");
     res.send(decodedSuccessHtml);
   });
 
-  app.get("/error.html", (req, res) => {
+  router.get("/error.html", (req, res) => {
     const errorMessage = req.query.error
       ? decodeURIComponent(req.query.error as string)
       : "Unknown error";
@@ -46,28 +53,28 @@ export function startWebServer(port: number): void {
     res.send(content);
   });
 
-  app.get("/login", (_req, res) => {
+  router.get("/login", (_req, res) => {
     if (!clientId || !clientSecret) {
       const error = encodeURIComponent("Client ID and Secret are not set");
-      return res.redirect(`/error.html?error=${error}`);
+      return res.redirect(`${basePath}/error.html?error=${error}`);
     }
 
     const params = new URLSearchParams({
       client_id: clientId,
       response_type: "code",
-      redirect_uri: `http://127.0.0.1:${port}/callback`,
+      redirect_uri: `http://127.0.0.1:${serverPort}${basePath}/callback`,
       scope: ["playlist-read-private", "playlist-read-collaborative"].join(" "),
     });
 
     res.redirect(`https://accounts.spotify.com/authorize?${params.toString()}`);
   });
 
-  app.get("/callback", async (req: Request, res: Response) => {
+  router.get("/callback", async (req: Request, res: Response) => {
     const code = req.query.code as string | undefined;
 
     if (!code) {
       const error = encodeURIComponent("Missing code parameter");
-      return res.redirect(`/error.html?error=${error}`);
+      return res.redirect(`${basePath}/error.html?error=${error}`);
     }
 
     try {
@@ -80,7 +87,7 @@ export function startWebServer(port: number): void {
         body: new URLSearchParams({
           grant_type: "authorization_code",
           code,
-          redirect_uri: `http://127.0.0.1:${port}/callback`,
+          redirect_uri: `http://127.0.0.1:${serverPort}${basePath}/callback`,
         }),
       });
 
@@ -88,7 +95,7 @@ export function startWebServer(port: number): void {
         const errorText = await tokenRes.text();
         console.error("Token fetch failed:", errorText);
         const error = encodeURIComponent("Failed to fetch token");
-        return res.redirect(`/error.html?error=${error}`);
+        return res.redirect(`${basePath}/error.html?error=${error}`);
       }
 
       const tokenData = (await tokenRes.json()) as {
@@ -99,21 +106,21 @@ export function startWebServer(port: number): void {
 
       if (!tokenData.access_token) {
         const error = encodeURIComponent("No access token received");
-        return res.redirect(`/error.html?error=${error}`);
+        return res.redirect(`${basePath}/error.html?error=${error}`);
       }
 
       accessToken = tokenData.access_token;
       refreshToken = tokenData.refresh_token || "";
 
-      return res.redirect("/success.html");
+      return res.redirect(`${basePath}/success.html`);
     } catch (error) {
       console.error("Callback error:", error);
       const msg = encodeURIComponent("An error occurred during authentication");
-      return res.redirect(`/error.html?error=${msg}`);
+      return res.redirect(`${basePath}/error.html?error=${msg}`);
     }
   });
 
-  app.get("/token", (req: Request, res: Response) => {
+  router.get("/token", (_req: Request, res: Response) => {
     if (!accessToken || !refreshToken) {
       return res
         .status(400)
@@ -122,7 +129,7 @@ export function startWebServer(port: number): void {
     res.json({ accessToken, refreshToken });
   });
 
-  app.get("/credentials", (req: Request, res: Response) => {
+  router.get("/credentials", (_req: Request, res: Response) => {
     if (!clientId || !clientSecret) {
       return res
         .status(400)
@@ -131,21 +138,38 @@ export function startWebServer(port: number): void {
     res.json({ clientId, clientSecret });
   });
 
-  server.listen(port, () => {
-    console.log(`✅ Syncify Web Server is running on http://localhost:${port}`);
+  const registration = await registerPluginHttpNamespace({
+    pluginName: PLUGIN_NAME,
+    ownerId: "syncify",
+    preferredPort: port,
+    accessScope,
+    router,
   });
+
+  basePath = registration.basePath;
+  unregisterNamespace = registration.unregister;
+  serverPort = registration.server.port;
+
+  console.log(
+    `✅ Syncify routes registered at ${registration.server.origin}${registration.basePath} (${accessScope})`,
+  );
 }
 
 /**
  * Stop the Express web server
  */
-export function stopWebServer(): void {
-  if (server) {
-    server.close(() => {
-      console.log("🛑 Syncify Web Server has been stopped");
-    });
-  } else {
-    console.warn("⚠️ No web server is running to stop");
+export async function stopWebServer(): Promise<void> {
+  if (!unregisterNamespace) {
+    return;
+  }
+
+  try {
+    await unregisterNamespace();
+    unregisterNamespace = null;
+    await stopSharedHttpServerIfIdle();
+    console.log("🛑 Syncify web routes have been unregistered");
+  } catch (error) {
+    console.error("Failed to stop Syncify web routes:", error);
   }
 }
 
@@ -167,7 +191,11 @@ export async function setCredentials(
  * @returns Access token string or empty string if unavailable
  */
 export async function getAccessToken(): Promise<string> {
-  const response = await fetch("http://localhost:2402/token");
+  const info = getSharedHttpServerInfo();
+  const resolvedPort = info?.port ?? serverPort;
+  const response = await fetch(
+    `http://127.0.0.1:${resolvedPort}${basePath}/token`,
+  );
   if (!response.ok) {
     console.error("Failed to fetch access token:", response.statusText);
     return "";
@@ -183,7 +211,11 @@ export async function getAccessToken(): Promise<string> {
  * @returns Refresh token string or empty string if unavailable
  */
 export async function getRefreshToken(): Promise<string> {
-  const response = await fetch("http://localhost:2402/token");
+  const info = getSharedHttpServerInfo();
+  const resolvedPort = info?.port ?? serverPort;
+  const response = await fetch(
+    `http://127.0.0.1:${resolvedPort}${basePath}/token`,
+  );
   if (!response.ok) {
     console.error("Failed to fetch refresh token:", response.statusText);
     return "";
@@ -197,6 +229,10 @@ export async function getRefreshToken(): Promise<string> {
  * Get the current server port
  * @returns Port number
  */
-export function getServerPort(): number {
-  return serverPort;
+export async function getServerPort(): Promise<number> {
+  return getSharedHttpServerInfo()?.port ?? serverPort;
+}
+
+export async function getServerBasePath(): Promise<string> {
+  return basePath;
 }

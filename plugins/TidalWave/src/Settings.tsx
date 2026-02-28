@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
 import React from "react"
 import { ReactiveStore } from "@luna/core"
-import { generateQRCode } from "./native/qrHelper.native"
+import { generateQrCodeDataUrl } from "@jxnxsdev/utils"
+import { getShareUrl } from "./native/webserver.native"
 
 type Settings = {
   webPort: number
+  serverAccessScope: "local" | "network"
   usePassword: boolean
   password: string
 }
@@ -12,26 +14,33 @@ type Settings = {
 // Load plugin settings
 export const settings = await ReactiveStore.getPluginStorage<Settings>("TidalWave", {
   webPort: 80,
+  serverAccessScope: "network",
   usePassword: false,
   password: "",
 })
 
 export const Settings = () => {
   const [webPort, setWebPort] = useState(settings.webPort)
+  const [serverAccessScope, setServerAccessScope] = useState(settings.serverAccessScope)
   const [usePassword, setUsePassword] = useState(settings.usePassword)
   const [password, setPassword] = useState(settings.password)
   const [qrCode, setQrCode] = useState<string | null>(null)
 
   useEffect(() => {
     ;(async () => {
-      const code: string = await generateQRCode(webPort)
+      const shareUrl = await getShareUrl(
+        serverAccessScope,
+      )
+      const code = await generateQrCodeDataUrl(shareUrl, {
+        errorCorrectionLevel: "H",
+      })
       if (typeof code === "string") {
         setQrCode(code.startsWith("data:image") ? code : `data:image/png;base64,${code}`)
       } else {
         setQrCode(null)
       }
     })()
-  }, [])
+  }, [webPort, serverAccessScope])
 
   // Update settings when values change
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
@@ -114,6 +123,22 @@ export const Settings = () => {
         ) : (
           <p style={{ textAlign: "center", color: "#555" }}>Generating QR code…</p>
         )}
+      </div>
+
+      <div style={{ marginBottom: "16px" }}>
+        <label style={labelStyle}>Endpoint Access Scope (restart required)</label>
+        <select
+          value={serverAccessScope}
+          onChange={(event) => {
+            const value = event.target.value as "local" | "network"
+            setServerAccessScope(value)
+            updateSetting("serverAccessScope", value)
+          }}
+          style={inputStyle}
+        >
+          <option value="local">Local PC only</option>
+          <option value="network">Whole network</option>
+        </select>
       </div>
 
       <div style={{ marginBottom: "16px" }}>

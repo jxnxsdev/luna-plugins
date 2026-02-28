@@ -12,7 +12,11 @@ unloads.add(() => {
     webServer.stopServer();
 });
 
-webServer.startServer(settings.webPort);
+webServer
+    .startServerWithScope(settings.webPort, settings.serverAccessScope)
+    .catch((error) => {
+        console.error("Failed to start TidalWave web routes:", error);
+    });
 
 export async function search(query: string) {
     // use tidals search

@@ -1,36 +1,19 @@
-import http from 'http';
-import * as ws from 'ws';
+import {
+    broadcastPluginWebSocket,
+    startPluginWebSocketHub,
+    stopPluginWebSocketHub,
+} from '@jxnxsdev/utils/native';
 
-let wss: ws.Server | null = null;
-let clients: ws.WebSocket[] = [];
+const PLUGIN_NAME = 'tidalwave';
 
 /**
  * Starts the WebSocket server on the given HTTP server instance.
  * Ensures connections are tracked and cleaned up when closed.
  *
- * @param {http.Server} server - The HTTP server to attach the WebSocket server to.
  * @returns {Promise<void>}
  */
-export async function startWebSocketServer(server: http.Server): Promise<void> {
-    return new Promise<void>((resolve) => {
-        if (wss) {
-            return resolve();
-        }
-
-        wss = new ws.WebSocketServer({ server });
-
-        wss.on('connection', (client: ws.WebSocket) => {
-            clients.push(client);
-
-            client.on('close', () => {
-                clients = clients.filter(c => c !== client);
-            });
-        });
-
-        wss.on('listening', () => {
-            resolve();
-        });
-    });
+export async function startWebSocketServer(): Promise<void> {
+    await startPluginWebSocketHub(PLUGIN_NAME);
 }
 
 /**
@@ -39,11 +22,9 @@ export async function startWebSocketServer(server: http.Server): Promise<void> {
  * @param {string} message - The message to broadcast.
  */
 export async function broadcastToClients(message: string): Promise<void> {
-    if (!wss) return;
+    broadcastPluginWebSocket(PLUGIN_NAME, message);
+}
 
-    clients.forEach(client => {
-        if (client.readyState === ws.WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
+export async function stopWebSocketServer(): Promise<void> {
+    await stopPluginWebSocketHub(PLUGIN_NAME);
 }
