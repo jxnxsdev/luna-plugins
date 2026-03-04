@@ -42,13 +42,18 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/qr-share
+- **Description**: Adds a sharing option to the context menu of songs, albums, playlists, and artists that generates a QR code linking to the item.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/spinny-cover
 - **Description**: Puts the Song Cover Image as the background and makes it spin.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
 ### @jxnxsdev/syncify
-- **Description**: Allows you to play Spotify playlists on Tidal
+- **Description**: Allows you to play Spotify playlists on Tidal. Requires spotify premium from the 2026-03-09 onwards.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
@@ -60,6 +65,11 @@ Tidal Wave allows multiple people adding songs to the tidal queue. No addional t
 
 ### @jxnxsdev/total-play-time
 - **Description**: Shows the total play time of all songs in the current playlist.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
+### @jxnxsdev/utils
+- **Description**: Shared utility helpers for luna plugins
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 

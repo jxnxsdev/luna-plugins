@@ -9,6 +9,7 @@
 	"main": "./src/index.ts",
 	"type": "module",
 	"dependencies": {
+		"@jxnxsdev/utils": "workspace:*",
 		"express": "^5.1.0",
 		"sqlite": "^5.1.1",
 		"sqlite3": "^5.1.7",

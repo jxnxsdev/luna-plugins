@@ -9,6 +9,6 @@
 	"main": "./src/index.ts",
 	"type": "module",
 	"dependencies": {
-		"clipboardy": "^4.0.0"
+		"@jxnxsdev/utils": "workspace:*"
 	}
 }

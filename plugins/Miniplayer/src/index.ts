@@ -1,5 +1,11 @@
 import type { LunaUnload } from "@luna/core";
 import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import {
+  buildLyricMap,
+  getCoverColorsFromMediaItem,
+  getLyricLineAtTime,
+  getMediaItemSnapshot,
+} from "@jxnxsdev/utils";
 import "./miniplayer.native";
 import {
   openMiniplayerWindow as openWindowNative,
@@ -8,6 +14,10 @@ import {
 } from "./miniplayer.native";
 
 let lyricsMap: Map<number, string> = new Map();
+let currentCoverColors: { primary: string; accent: string } = {
+  primary: "#ff6b35",
+  accent: "#ff8c42",
+};
 
 export const unloads = new Set<LunaUnload>();
 
@@ -17,7 +27,11 @@ unloads.add(() => {
 
 let openWindowButton: HTMLButtonElement = document.createElement("button");
 openWindowButton.innerText = "Open Miniplayer";
-openWindowButton.addEventListener("click", openWindowNative);
+openWindowButton.addEventListener("click", async () => {
+  await openWindowNative();
+  // Send initial state after a short delay to ensure window is ready
+  setTimeout(sendInitialState, 100);
+});
 openWindowButton.style = `
     border: none;
     background-color: gray;
@@ -39,7 +53,7 @@ openWindowButton.addEventListener("mouseleave", () => {
 
 async function start() {
   const _searchAndLinksElement = Array.from(
-    document.getElementsByTagName("div")
+    document.getElementsByTagName("div"),
   ).find((el) => el.className.includes("_fixedNavigation"));
   if (!_searchAndLinksElement) return setTimeout(start, 1000);
 
@@ -52,30 +66,49 @@ async function start() {
   initialLyricsLoad();
 }
 
+async function sendInitialState() {
+  const mediaItem = await MediaItem.fromPlaybackContext();
+  if (!mediaItem) return;
+  const snapshot = await getMediaItemSnapshot(mediaItem);
+
+  // Extract colors from current cover before sending initial state
+  if (snapshot.coverUrl) {
+    try {
+      const colors = await getCoverColorsFromMediaItem(mediaItem, {
+        paletteSize: 2,
+        accentIndex: 1,
+      });
+      if (colors) {
+        currentCoverColors = {
+          primary: colors.primary,
+          accent: colors.accent,
+        };
+      }
+    } catch (err) {
+      console.error("Error extracting colors:", err);
+    }
+  }
+
+  sendIPC(
+    "miniplayer.update",
+    JSON.stringify({
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      lyrics: snapshot.lyrics,
+      lyricsLine: "",
+      songLength: snapshot.duration,
+      songProgress: 0,
+      album: snapshot.album,
+      year: snapshot.year,
+      colors: currentCoverColors,
+    }),
+  );
+}
+
 async function initialLyricsLoad() {
   let mediaItem = await MediaItem.fromPlaybackContext();
 
-  if (!mediaItem) return;
-
-  const lyrics = await mediaItem.lyrics();
-  if (!lyrics) {
-    lyricsMap = new Map();
-    return;
-  }
-
-  const map = new Map<number, string>();
-  for (const line of lyrics.subtitles.split("\n")) {
-    const [timePart, textPart] = line.split("]");
-    if (!textPart) continue;
-    const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-    const timeInSec = Math.floor(min * 60 + sec);
-    map.set(timeInSec, textPart.trim());
-  }
-
-  lyricsMap = map;
-}
-
-MediaItem.onMediaTransition(unloads, async (mediaItem) => {
   if (!mediaItem) return;
 
   const lyrics = await mediaItem.lyrics();
@@ -84,73 +117,63 @@ MediaItem.onMediaTransition(unloads, async (mediaItem) => {
     return;
   }
 
-  const map = new Map<number, string>();
-  for (const line of lyrics.subtitles.split("\n")) {
-    const [timePart, textPart] = line.split("]");
-    if (!textPart) continue;
-    const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-    const timeInSec = Math.floor(min * 60 + sec);
-    map.set(timeInSec, textPart.trim());
+  lyricsMap = buildLyricMap(lyrics.subtitles);
+}
+
+MediaItem.onMediaTransition(unloads, async (mediaItem) => {
+  if (!mediaItem) return;
+
+  const lyrics = await mediaItem.lyrics();
+  if (!lyrics || !lyrics.subtitles) {
+    lyricsMap = new Map();
+  } else {
+    lyricsMap = buildLyricMap(lyrics.subtitles);
   }
 
-  lyricsMap = map;
+  // Extract colors from cover (runs in main window, no CORS issues)
+  try {
+    const colors = await getCoverColorsFromMediaItem(mediaItem, {
+      paletteSize: 2,
+      accentIndex: 1,
+    });
+    if (colors) {
+      currentCoverColors = {
+        primary: colors.primary,
+        accent: colors.accent,
+      };
+    }
+  } catch (err) {
+    console.error("Error extracting colors:", err);
+  }
 });
 
 start();
-
-function getClosestTime(currentTime: number): number | null {
-  let closest: number | null = null;
-  let maxTime = -Infinity;
-
-  for (const [time] of lyricsMap) {
-    if (time <= currentTime && time > maxTime) {
-      maxTime = time;
-      closest = time;
-    }
-  }
-
-  return closest;
-}
 
 ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
   const signal = data.signal;
   if (signal !== "media.currenttime") return;
   const currentTime = Math.floor(Number(data.time));
-  const closest = getClosestTime(currentTime);
-  let line: string | undefined = "";
-  if (closest !== null) {
-    line = lyricsMap.get(closest);
-  }
+  const line = getLyricLineAtTime(lyricsMap, currentTime) || "";
 
   const mediaItem = await MediaItem.fromPlaybackContext();
   if (!mediaItem) return;
-  let title = await mediaItem.title();
-  let artist = await mediaItem.artist();
-  let coverUrl = await mediaItem.coverUrl();
-  let lyrics = await mediaItem.lyrics();
-  let album = await mediaItem
-    .album()
-    .then(async (album) =>
-      album ? (await album.title()) || "Unknown Album" : "Unknown Album"
-    );
-  let songLength = await mediaItem.duration;
-  let songProgress = data.time;
-  let year = await mediaItem.releaseDate();
-  let yearString = (await year?.getFullYear().toString()) || "Unknown Year";
+  const snapshot = await getMediaItemSnapshot(mediaItem);
+  const songProgress = data.time;
 
   sendIPC(
     "miniplayer.update",
     JSON.stringify({
-      title: title || "Unknown Title",
-      artist: artist || "Unknown Artist",
-      coverUrl: coverUrl || "",
-      lyrics: lyrics || "",
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      lyrics: snapshot.lyrics,
       lyricsLine: line || "No lyrics available",
-      songLength: songLength || 0,
+      songLength: snapshot.duration,
       songProgress: songProgress || 0,
-      album: album || "Unknown Album",
-      year: yearString || "Unknown Year",
-    })
+      album: snapshot.album,
+      year: snapshot.year,
+      colors: currentCoverColors,
+    }),
   );
 });
 
@@ -175,6 +198,17 @@ ipcRenderer.on(unloads, "miniplayer.playercontrolsFE", (data) => {
       const seekTime = data.seekTime;
       if (typeof seekTime === "number") {
         PlayState.seek(seekTime);
+      }
+      break;
+    }
+
+    case "volume": {
+      const volume = data.volume;
+      if (typeof volume === "number") {
+        ipcRenderer.send(
+          "player.message",
+          `{"command":"media.volume","volume":${volume}}`,
+        );
       }
       break;
     }
