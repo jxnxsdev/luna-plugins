@@ -12,74 +12,86 @@ const appDataPath = path.join(os.homedir(), ".luna", "Syncify");
 const dataPath = path.join(appDataPath, "data.json");
 
 async function ensureDataFile(): Promise<{ uuid: string }> {
-    try {
-        await fs.mkdir(appDataPath, { recursive: true });
+  try {
+    await fs.mkdir(appDataPath, { recursive: true });
 
-        try {
-            const data = JSON.parse(await fs.readFile(dataPath, "utf-8"));
-            return data;
-        } catch {
-            const newData = { uuid: uuidv4() };
-            await fs.writeFile(dataPath, JSON.stringify(newData, null, 2), "utf-8");
-            return newData;
-        }
-    } catch (err) {
-        console.error("Error ensuring data file:", err);
-        throw err;
+    try {
+      const data = JSON.parse(await fs.readFile(dataPath, "utf-8"));
+      return data;
+    } catch {
+      const newData = { uuid: uuidv4() };
+      await fs.writeFile(dataPath, JSON.stringify(newData, null, 2), "utf-8");
+      return newData;
     }
+  } catch (err) {
+    console.error("Error ensuring data file:", err);
+    throw err;
+  }
 }
 
 export async function openSpotifyTokenGenerator(): Promise<void> {
-    const port = await webserver.getServerPort();
-    const basePath = await webserver.getServerBasePath();
+  const port = await webserver.getServerPort();
+  const basePath = await webserver.getServerBasePath();
   const url = `http://127.0.0.1:${port}${basePath}/login`;
-    try {
-        await shell.openExternal(url);
-    } catch (err) {
-        console.error("Failed to open Spotify token generator:", err);
-    }
+  try {
+    await shell.openExternal(url);
+  } catch (err) {
+    console.error("Failed to open Spotify token generator:", err);
+  }
 }
 
 export async function getTokenFromGenerator(): Promise<tokenResponse> {
-    let token = await webserver.getAccessToken();
-    let refreshToken = await webserver.getRefreshToken();
-    console.log("Retrieved tokens from generator:", { token, refreshToken });
+  let token = await webserver.getAccessToken();
+  let refreshToken = await webserver.getRefreshToken();
+  console.log("Retrieved tokens from generator:", { token, refreshToken });
 
+  if (!token || !refreshToken) {
+    console.error(
+      "No token or refresh token found. Please authenticate first.",
+    );
+    return { token: "", refreshToken: "", success: false };
+  }
 
-    if (!token || !refreshToken) {
-        console.error("No token or refresh token found. Please authenticate first.");
-        return { token: "", refreshToken: "", success: false };
-    }
-
-    return { token, refreshToken, success: true };
+  return { token, refreshToken, success: true };
 }
 
-export async function refreshSpotifyToken(token: string, refreshToken: string, clientId: string, clientSecret: string): Promise<tokenResponse> {
-    try {
-        const response = await fetch("https://accounts.spotify.com/api/token", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                Authorization: "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64")
-            },
-            body: new URLSearchParams({
-                grant_type: "refresh_token",
-                refresh_token: refreshToken
-            })
-        });
+export async function refreshSpotifyToken(
+  token: string,
+  refreshToken: string,
+  clientId: string,
+  clientSecret: string,
+): Promise<tokenResponse> {
+  try {
+    const response = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization:
+          "Basic " +
+          Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Failed to refresh token:", errorText);
-            return { token: "", refreshToken: "", success: false };
-        }
-
-        const data = await response.json();
-        return { token: data.access_token, refreshToken: data.refresh_token || "", success: true };
-    } catch (err) {
-        console.error("Error refreshing Spotify token:", err);
-        return { token: "", refreshToken: "", success: false };
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Failed to refresh token:", errorText);
+      return { token: "", refreshToken: "", success: false };
     }
+
+    const data = await response.json();
+    return {
+      token: data.access_token,
+      refreshToken: data.refresh_token || "",
+      success: true,
+    };
+  } catch (err) {
+    console.error("Error refreshing Spotify token:", err);
+    return { token: "", refreshToken: "", success: false };
+  }
 }
 
 /**
@@ -88,7 +100,9 @@ export async function refreshSpotifyToken(token: string, refreshToken: string, c
  * @param token Spotify access token
  * @returns Array of SpotifyPlaylist objects
  */
-export async function getSpotifyPlaylists(token: string): Promise<SpotifyPlaylist[]> {
+export async function getSpotifyPlaylists(
+  token: string,
+): Promise<SpotifyPlaylist[]> {
   try {
     const playlists: SpotifyPlaylist[] = [];
     let offset = 0;
@@ -101,12 +115,12 @@ export async function getSpotifyPlaylists(token: string): Promise<SpotifyPlaylis
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
         throw new Error(
-          `Failed to fetch playlists at offset ${offset}: ${response.status} ${response.statusText}`
+          `Failed to fetch playlists at offset ${offset}: ${response.status} ${response.statusText}`,
         );
       }
 
@@ -140,7 +154,7 @@ export async function getSpotifyPlaylists(token: string): Promise<SpotifyPlaylis
  */
 export async function getSpotifyPlaylistSongs(
   spotifyPlaylist: SpotifyPlaylist,
-  token: string
+  token: string,
 ): Promise<SpotifyPlaylist> {
   const songs: SpotifySong[] = [];
   let offset = 0;
@@ -149,16 +163,18 @@ export async function getSpotifyPlaylistSongs(
   try {
     while (true) {
       const response = await fetch(
-        `https://api.spotify.com/v1/playlists/${spotifyPlaylist.spotifyId}/tracks?limit=${limit}&offset=${offset}`,
+        `https://api.spotify.com/v1/playlists/${spotifyPlaylist.spotifyId}/items?limit=${limit}&offset=${offset}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
+            Authorization: `Bearer ${token}`,
+          },
+        },
       );
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch playlist songs at offset ${offset}: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to fetch playlist songs at offset ${offset}: ${response.status} ${response.statusText}`,
+        );
       }
 
       const data = await response.json();
@@ -170,7 +186,7 @@ export async function getSpotifyPlaylistSongs(
             title: track.name,
             // @ts-expect-error
             artists: track.artists.map((artist) => artist.name),
-            spotifyId: track.id
+            spotifyId: track.id,
           });
         }
       }
@@ -181,14 +197,13 @@ export async function getSpotifyPlaylistSongs(
 
     return {
       ...spotifyPlaylist,
-      songs
+      songs,
     };
   } catch (err) {
     console.error("Error fetching playlist songs:", err);
     return {
       ...spotifyPlaylist,
-      songs: []
+      songs: [],
     };
   }
 }
-
