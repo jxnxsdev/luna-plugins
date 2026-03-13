@@ -5,6 +5,7 @@ import {
   getCoverColorsFromMediaItem,
   getLyricLineAtTime,
   getMediaItemSnapshot,
+  observePlaybackSnapshot,
 } from "@jxnxsdev/utils";
 import "./miniplayer.native";
 import {
@@ -273,46 +274,41 @@ MediaItem.onMediaTransition(unloads, async (mediaItem) => {
 
 start();
 
-ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
-  const signal = data.signal;
-  if (signal !== "media.currenttime") return;
-  const currentTime = Math.floor(Number(data.time));
-  const line = getLyricLineAtTime(lyricsMap, currentTime) || "";
+observePlaybackSnapshot(
+  unloads,
+  async (payload) => {
+    const line = getLyricLineAtTime(lyricsMap, payload.songProgress) || "";
 
-  const mediaItem = await MediaItem.fromPlaybackContext();
-  if (!mediaItem) return;
-  const snapshot = await getMediaItemSnapshot(mediaItem);
-  const songProgress = data.time;
+    sendIPC(
+      "miniplayer.update",
+      JSON.stringify({
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        lyrics: payload.lyrics,
+        lyricsLine: line || "No lyrics available",
+        songLength: payload.duration,
+        songProgress: payload.songProgress || 0,
+        album: payload.album,
+        year: payload.year,
+        colors: currentCoverColors,
+      }),
+    );
 
-  sendIPC(
-    "miniplayer.update",
-    JSON.stringify({
-      title: snapshot.title,
-      artist: snapshot.artist,
-      coverUrl: snapshot.coverUrl,
-      lyrics: snapshot.lyrics,
-      lyricsLine: line || "No lyrics available",
-      songLength: snapshot.duration,
-      songProgress: songProgress || 0,
-      album: snapshot.album,
-      year: snapshot.year,
-      colors: currentCoverColors,
-    }),
-  );
-
-  sendTaskbarWidgetUpdate(snapshot, songProgress || 0);
-});
-
-PlayState.onState(unloads, async () => {
-  if (!isWindowsClient || !settings.addTaskbarWidget) return;
-
-  const mediaItem = await MediaItem.fromPlaybackContext();
-  if (!mediaItem) return;
-  const snapshot = await getMediaItemSnapshot(mediaItem);
-  const currentTime = Math.floor(Number(PlayState.currentTime ?? 0));
-
-  sendTaskbarWidgetUpdate(snapshot, currentTime);
-});
+    sendTaskbarWidgetUpdate(
+      {
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        duration: payload.duration,
+        album: payload.album,
+        year: payload.year,
+      },
+      payload.songProgress || 0,
+    );
+  },
+  { minUpdateIntervalMs: 150 },
+);
 
 ipcRenderer.on(unloads, "miniplayer.playercontrolsFE", (data) => {
   switch (data.action) {
