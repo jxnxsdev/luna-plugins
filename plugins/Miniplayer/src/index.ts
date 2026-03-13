@@ -1,5 +1,5 @@
 import type { LunaUnload } from "@luna/core";
-import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import { redux, MediaItem, PlayState, Quality, ipcRenderer } from "@luna/lib";
 import {
   buildLyricMap,
   getCoverColorsFromMediaItem,
@@ -11,7 +11,13 @@ import {
   openMiniplayerWindow as openWindowNative,
   closeWindow,
   sendIPC,
+  openTaskbarWidgetWindow,
+  closeTaskbarWidgetWindow,
+  sendTaskbarIPC,
+  setTaskbarWidgetHorizontalOffset as setTaskbarWidgetHorizontalOffsetNative,
+  setTaskbarWidgetWidth as setTaskbarWidgetWidthNative,
 } from "./miniplayer.native";
+import { settings } from "./Settings";
 
 let lyricsMap: Map<number, string> = new Map();
 let currentCoverColors: { primary: string; accent: string } = {
@@ -20,10 +26,115 @@ let currentCoverColors: { primary: string; accent: string } = {
 };
 
 export const unloads = new Set<LunaUnload>();
+export { Settings } from "./Settings";
+
+const isWindowsClient =
+  typeof navigator !== "undefined" &&
+  /win/i.test(navigator.userAgent || navigator.platform || "");
+
+function getTaskbarQualityInfo() {
+  const audioQuality = PlayState.playbackContext.actualAudioQuality;
+  const quality = Quality.fromAudioQuality(audioQuality);
+  const qualityName = quality?.name ?? "Unknown";
+  const normalizedName = qualityName.toLowerCase();
+
+  let qualityColor = "#9ca3af";
+  if (
+    normalizedName.includes("max") ||
+    normalizedName.includes("master") ||
+    normalizedName.includes("mqa")
+  ) {
+    qualityColor = "#d4af37";
+  } else if (
+    normalizedName.includes("hifi") ||
+    normalizedName.includes("lossless")
+  ) {
+    qualityColor = "#00d8d8";
+  }
+
+  return {
+    qualityName,
+    qualityColor,
+  };
+}
+
+function getTaskbarDisplaySettings() {
+  return {
+    showProgressBar: settings.taskbarShowProgressBar,
+    showCover: settings.taskbarShowCover,
+    showSongName: settings.taskbarShowSongName,
+    showArtistName: settings.taskbarShowArtistName,
+    showAlbumName: settings.taskbarShowAlbumName,
+    showSongQuality: settings.taskbarShowSongQuality,
+    showYear: settings.taskbarShowYear,
+    showTime: settings.taskbarShowTime,
+    showPlayState: settings.taskbarShowPlayState,
+  };
+}
+
+function sendTaskbarWidgetUpdate(
+  snapshot: {
+    title: string;
+    artist: string;
+    coverUrl: string;
+    duration: number;
+    album: string;
+    year: string;
+  },
+  songProgress: number,
+) {
+  const { qualityName, qualityColor } = getTaskbarQualityInfo();
+
+  sendTaskbarIPC(
+    "miniplayer.taskbar.update",
+    JSON.stringify({
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      songLength: snapshot.duration,
+      songProgress,
+      album: snapshot.album,
+      year: snapshot.year,
+      progressColor: currentCoverColors.primary,
+      qualityName,
+      qualityColor,
+      playing: PlayState.playing,
+      display: getTaskbarDisplaySettings(),
+    }),
+  );
+}
 
 unloads.add(() => {
   closeWindow();
+  closeTaskbarWidgetWindow();
 });
+
+export async function setTaskbarWidgetEnabled(enabled: boolean) {
+  if (!isWindowsClient) return;
+
+  if (enabled) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+    return;
+  }
+
+  await closeTaskbarWidgetWindow();
+}
+
+export function setTaskbarWidgetHorizontalOffset(offset: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetHorizontalOffsetNative(offset);
+}
+
+export function setTaskbarWidgetWidth(width: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetWidthNative(width);
+}
+
+export async function refreshTaskbarWidget() {
+  if (!isWindowsClient || !settings.addTaskbarWidget) return;
+  await sendInitialState();
+}
 
 let openWindowButton: HTMLButtonElement = document.createElement("button");
 openWindowButton.innerText = "Open Miniplayer";
@@ -32,6 +143,7 @@ openWindowButton.addEventListener("click", async () => {
   // Send initial state after a short delay to ensure window is ready
   setTimeout(sendInitialState, 100);
 });
+
 openWindowButton.style = `
     border: none;
     background-color: gray;
@@ -62,6 +174,16 @@ async function start() {
   unloads.add(() => {
     _searchAndLinksElement.removeChild(openWindowButton);
   });
+
+  setTaskbarWidgetHorizontalOffsetNative(
+    settings.taskbarWidgetHorizontalOffset,
+  );
+  setTaskbarWidgetWidthNative(settings.taskbarWidgetWidth);
+
+  if (isWindowsClient && settings.addTaskbarWidget) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+  }
 
   initialLyricsLoad();
 }
@@ -104,6 +226,8 @@ async function sendInitialState() {
       colors: currentCoverColors,
     }),
   );
+
+  sendTaskbarWidgetUpdate(snapshot, 0);
 }
 
 async function initialLyricsLoad() {
@@ -175,6 +299,19 @@ ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
       colors: currentCoverColors,
     }),
   );
+
+  sendTaskbarWidgetUpdate(snapshot, songProgress || 0);
+});
+
+PlayState.onState(unloads, async () => {
+  if (!isWindowsClient || !settings.addTaskbarWidget) return;
+
+  const mediaItem = await MediaItem.fromPlaybackContext();
+  if (!mediaItem) return;
+  const snapshot = await getMediaItemSnapshot(mediaItem);
+  const currentTime = Math.floor(Number(PlayState.currentTime ?? 0));
+
+  sendTaskbarWidgetUpdate(snapshot, currentTime);
 });
 
 ipcRenderer.on(unloads, "miniplayer.playercontrolsFE", (data) => {
