@@ -23,11 +23,13 @@ export const settings = await ReactiveStore.getPluginStorage("Syncify", {
     isLoggedIn: false,
     token: "",
     refreshToken: "",
+    serverAccessScope: "local" as "local" | "network",
     clientId: "",
     clientSecret: "",
     activePlaylists: [] as string[],
     activePlaylistsSettings: [] as string[],
-    popupWasShown: false
+    popupWasShown: false,
+    announcementDismissed: false
 });
 
 export const Settings = () => {
@@ -40,6 +42,7 @@ export const Settings = () => {
     const [playlists, setPlaylists] = useState<{ spotifyId: string; name: string }[]>([]);
     const [clientId, setClientId] = useState(settings.clientId);
     const [clientSecret, setClientSecret] = useState(settings.clientSecret);
+    const [serverAccessScope, setServerAccessScope] = useState(settings.serverAccessScope);
 
     useEffect(() => {
         setCurrentState(isLoggedIn ? "Log out" : "Log in");
@@ -84,6 +87,20 @@ export const Settings = () => {
                     setClientSecret((settings.clientSecret = e.target.value));
                 }}
             />
+
+            <LunaSelectSetting
+                id="syncify-server-access-scope"
+                title="Endpoint Access"
+                desc="Choose whether Syncify web endpoints are reachable only from this computer or from the local network."
+                value={serverAccessScope}
+                onChange={(event: any) => {
+                    const value = event.target.value as "local" | "network";
+                    setServerAccessScope((settings.serverAccessScope = value));
+                }}
+            >
+                <LunaSelectItem value="local">Local PC only</LunaSelectItem>
+                <LunaSelectItem value="network">Whole network</LunaSelectItem>
+            </LunaSelectSetting>
 
             <LunaButtonSetting
                 title="Spotify Login"

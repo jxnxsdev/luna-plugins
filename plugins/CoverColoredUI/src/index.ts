@@ -1,12 +1,9 @@
 import { LunaUnload, Tracer } from "@luna/core";
 import { MediaItem } from "@luna/lib";
-import ColorThief from "colorthief";
+import { getCoverColorsFromMediaItem } from "@jxnxsdev/utils";
 
 export const unloads = new Set<LunaUnload>();
 export const { trace, errSignal } = Tracer("[CoverColoredUI]");
-
-const colorThief = new ColorThief();
-const img = new Image();
 
 const colorStyle = document.createElement("style");
 document.head.appendChild(colorStyle);
@@ -14,21 +11,6 @@ document.head.appendChild(colorStyle);
 unloads.add(() => {
   colorStyle.remove();
 });
-
-function clampReadableColor(
-  [r, g, b]: [number, number, number],
-  minLuminance = 80,
-): [number, number, number] {
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  if (luminance >= minLuminance) return [r, g, b];
-
-  const factor = minLuminance / Math.max(luminance, 1);
-  return [
-    Math.min(255, Math.round(r * factor)),
-    Math.min(255, Math.round(g * factor)),
-    Math.min(255, Math.round(b * factor)),
-  ];
-}
 
 let rafPending = false;
 function scheduleColorUpdate(color: string) {
@@ -78,24 +60,15 @@ function updateColors(color: string) {
 }
 
 MediaItem.onMediaTransition(unloads, async (mediaItem) => {
-  const url = await mediaItem.coverUrl();
-  if (!url) return;
+  try {
+    const colors = await getCoverColorsFromMediaItem(mediaItem, {
+      readable: true,
+      minLuminance: 80,
+    });
+    if (!colors) return;
 
-  img.src = url;
-
-  img.onload = () => {
-    try {
-      const dominantColor = colorThief.getColor(img) as [
-        number,
-        number,
-        number,
-      ];
-      const safeColor = clampReadableColor(dominantColor);
-      const rgbString = `rgb(${safeColor[0]}, ${safeColor[1]}, ${safeColor[2]})`;
-
-      scheduleColorUpdate(rgbString);
-    } catch (err) {
-      trace.msg.err("Error updating colors:", err);
-    }
-  };
+    scheduleColorUpdate(colors.primary);
+  } catch (err) {
+    trace.msg.err("Error updating colors:", err);
+  }
 });

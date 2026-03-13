@@ -9,9 +9,6 @@
 	"main": "./src/index.ts",
 	"type": "module",
 	"dependencies": {
-		"colorthief": "^2.6.0"
-	},
-	"devDependencies": {
-		"@types/colorthief": "^2.6.1"
+		"@jxnxsdev/utils": "workspace:*"
 	}
 }
