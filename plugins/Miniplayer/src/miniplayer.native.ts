@@ -318,6 +318,55 @@ export const sendTaskbarIPC = (channel: string, data: any) => {
   }
 };
 
+const isDataPopupWindow = (window: BrowserWindow) => {
+  const url = window.webContents.getURL();
+  return url.startsWith("data:text/html");
+};
+
+const getWindowArea = (window: BrowserWindow) => {
+  const bounds = window.getBounds();
+  return Math.max(0, bounds.width) * Math.max(0, bounds.height);
+};
+
+const getMainAppWindow = (): BrowserWindow | null => {
+  const windows = BrowserWindow.getAllWindows().filter(
+    (window) =>
+      !window.isDestroyed() &&
+      window !== taskbarWidgetWin &&
+      window !== win,
+  );
+  if (windows.length === 0) return null;
+
+  const byLargestArea = (a: BrowserWindow, b: BrowserWindow) =>
+    getWindowArea(b) - getWindowArea(a);
+
+  const preferred = windows
+    .filter((window) => window.isVisible() && !isDataPopupWindow(window))
+    .sort(byLargestArea);
+  if (preferred.length > 0) return preferred[0];
+
+  const visible = windows.filter((window) => window.isVisible()).sort(byLargestArea);
+  if (visible.length > 0) return visible[0];
+
+  return windows.sort(byLargestArea)[0] ?? null;
+};
+
+ipcMain.on("miniplayer.taskbar.focus-main", () => {
+  const targetWindow = getMainAppWindow();
+  if (!targetWindow) return;
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+
+  targetWindow.show();
+  targetWindow.moveTop();
+  targetWindow.setAlwaysOnTop(true);
+  targetWindow.setAlwaysOnTop(false);
+  targetWindow.focus();
+  app.focus({ steal: true });
+});
+
 ipcMain.on("miniplayer.playercontrols", (event, data) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send("miniplayer.playercontrolsFE", data);

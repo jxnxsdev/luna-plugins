@@ -1,6 +1,6 @@
 import type { CoverCapableMediaItem, LunaMediaItemLike } from "./types";
 import type { LunaUnload } from "@luna/core";
-import { ipcRenderer, MediaItem, PlayState } from "@luna/lib";
+import { ipcRenderer, MediaItem, PlayState, Quality } from "@luna/lib";
 
 function normalizeArtistValue(
   artist:
@@ -176,6 +176,8 @@ export type PlaybackSnapshot = {
   year: string;
   songProgress: number;
   isPlaying: boolean;
+  qualityName: string;
+  qualityColor: string;
 };
 
 /**
@@ -209,6 +211,15 @@ export function observePlaybackSnapshot(
     const songProgress = Math.max(0, Math.floor(rawProgress));
     const isPlaying = PlayState.playing;
 
+    const bestQuality = mediaItem.bestQuality;
+    const playbackQuality = Quality.fromAudioQuality(
+      PlayState.playbackContext.actualAudioQuality,
+    );
+    const qualityName =
+      bestQuality?.name ?? playbackQuality?.name ?? "Unknown";
+    const qualityColor =
+      bestQuality?.color ?? playbackQuality?.color ?? "#9ca3af";
+
     const signature = `${String(mediaItem.id)}:${songProgress}:${isPlaying ? 1 : 0}`;
     if (!force && signature === lastSignature) return;
 
@@ -225,6 +236,8 @@ export function observePlaybackSnapshot(
       year: snapshot.year,
       songProgress,
       isPlaying,
+      qualityName,
+      qualityColor,
     });
   };
 

@@ -1,5 +1,5 @@
 import type { LunaUnload } from "@luna/core";
-import { redux, MediaItem, PlayState, Quality, ipcRenderer } from "@luna/lib";
+import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
 import {
   buildLyricMap,
   getCoverColorsFromMediaItem,
@@ -33,32 +33,6 @@ const isWindowsClient =
   typeof navigator !== "undefined" &&
   /win/i.test(navigator.userAgent || navigator.platform || "");
 
-function getTaskbarQualityInfo() {
-  const audioQuality = PlayState.playbackContext.actualAudioQuality;
-  const quality = Quality.fromAudioQuality(audioQuality);
-  const qualityName = quality?.name ?? "Unknown";
-  const normalizedName = qualityName.toLowerCase();
-
-  let qualityColor = "#9ca3af";
-  if (
-    normalizedName.includes("max") ||
-    normalizedName.includes("master") ||
-    normalizedName.includes("mqa")
-  ) {
-    qualityColor = "#d4af37";
-  } else if (
-    normalizedName.includes("hifi") ||
-    normalizedName.includes("lossless")
-  ) {
-    qualityColor = "#00d8d8";
-  }
-
-  return {
-    qualityName,
-    qualityColor,
-  };
-}
-
 function getTaskbarDisplaySettings() {
   return {
     showProgressBar: settings.taskbarShowProgressBar,
@@ -73,7 +47,7 @@ function getTaskbarDisplaySettings() {
   };
 }
 
-function sendTaskbarWidgetUpdate(
+async function sendTaskbarWidgetUpdate(
   snapshot: {
     title: string;
     artist: string;
@@ -83,8 +57,10 @@ function sendTaskbarWidgetUpdate(
     year: string;
   },
   songProgress: number,
+  qualityInfo?: { qualityName: string; qualityColor: string },
 ) {
-  const { qualityName, qualityColor } = getTaskbarQualityInfo();
+  const qualityName = qualityInfo?.qualityName ?? "Unknown";
+  const qualityColor = qualityInfo?.qualityColor ?? "#9ca3af";
 
   sendTaskbarIPC(
     "miniplayer.taskbar.update",
@@ -228,7 +204,7 @@ async function sendInitialState() {
     }),
   );
 
-  sendTaskbarWidgetUpdate(snapshot, 0);
+  await sendTaskbarWidgetUpdate(snapshot, 0);
 }
 
 async function initialLyricsLoad() {
@@ -295,7 +271,7 @@ observePlaybackSnapshot(
       }),
     );
 
-    sendTaskbarWidgetUpdate(
+    await sendTaskbarWidgetUpdate(
       {
         title: payload.title,
         artist: payload.artist,
@@ -305,6 +281,10 @@ observePlaybackSnapshot(
         year: payload.year,
       },
       payload.songProgress || 0,
+      {
+        qualityName: payload.qualityName,
+        qualityColor: payload.qualityColor,
+      },
     );
   },
   { minUpdateIntervalMs: 150 },

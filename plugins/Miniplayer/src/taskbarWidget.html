@@ -13,6 +13,8 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
       }
 
       body {
@@ -32,6 +34,7 @@
         gap: 8px;
         padding: 0 6px;
         background: transparent;
+        cursor: pointer;
       }
 
       .cover {
@@ -228,6 +231,18 @@
     </div>
 
     <script>
+      document.addEventListener("selectstart", (event) => event.preventDefault());
+      document.addEventListener("dragstart", (event) => event.preventDefault());
+      document.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+
+      document.addEventListener("click", () => {
+        if (window.electronAPI?.focusMainWindow) {
+          window.electronAPI.focusMainWindow();
+        }
+      });
+
       const cover = document.getElementById("cover");
       const song = document.getElementById("song");
       const state = document.getElementById("state");
