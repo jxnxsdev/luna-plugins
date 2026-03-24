@@ -5,13 +5,20 @@ import {
   getCoverColorsFromMediaItem,
   getLyricLineAtTime,
   getMediaItemSnapshot,
+  observePlaybackSnapshot,
 } from "@jxnxsdev/utils";
 import "./miniplayer.native";
 import {
   openMiniplayerWindow as openWindowNative,
   closeWindow,
   sendIPC,
+  openTaskbarWidgetWindow,
+  closeTaskbarWidgetWindow,
+  sendTaskbarIPC,
+  setTaskbarWidgetHorizontalOffset as setTaskbarWidgetHorizontalOffsetNative,
+  setTaskbarWidgetWidth as setTaskbarWidgetWidthNative,
 } from "./miniplayer.native";
+import { settings } from "./Settings";
 
 let lyricsMap: Map<number, string> = new Map();
 let currentCoverColors: { primary: string; accent: string } = {
@@ -20,10 +27,91 @@ let currentCoverColors: { primary: string; accent: string } = {
 };
 
 export const unloads = new Set<LunaUnload>();
+export { Settings } from "./Settings";
+
+const isWindowsClient =
+  typeof navigator !== "undefined" &&
+  /win/i.test(navigator.userAgent || navigator.platform || "");
+
+function getTaskbarDisplaySettings() {
+  return {
+    showProgressBar: settings.taskbarShowProgressBar,
+    showCover: settings.taskbarShowCover,
+    showSongName: settings.taskbarShowSongName,
+    showArtistName: settings.taskbarShowArtistName,
+    showAlbumName: settings.taskbarShowAlbumName,
+    showSongQuality: settings.taskbarShowSongQuality,
+    showYear: settings.taskbarShowYear,
+    showTime: settings.taskbarShowTime,
+    showPlayState: settings.taskbarShowPlayState,
+  };
+}
+
+async function sendTaskbarWidgetUpdate(
+  snapshot: {
+    title: string;
+    artist: string;
+    coverUrl: string;
+    duration: number;
+    album: string;
+    year: string;
+  },
+  songProgress: number,
+  qualityInfo?: { qualityName: string; qualityColor: string },
+) {
+  const qualityName = qualityInfo?.qualityName ?? "Unknown";
+  const qualityColor = qualityInfo?.qualityColor ?? "#9ca3af";
+
+  sendTaskbarIPC(
+    "miniplayer.taskbar.update",
+    JSON.stringify({
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      songLength: snapshot.duration,
+      songProgress,
+      album: snapshot.album,
+      year: snapshot.year,
+      progressColor: currentCoverColors.primary,
+      qualityName,
+      qualityColor,
+      playing: PlayState.playing,
+      display: getTaskbarDisplaySettings(),
+    }),
+  );
+}
 
 unloads.add(() => {
   closeWindow();
+  closeTaskbarWidgetWindow();
 });
+
+export async function setTaskbarWidgetEnabled(enabled: boolean) {
+  if (!isWindowsClient) return;
+
+  if (enabled) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+    return;
+  }
+
+  await closeTaskbarWidgetWindow();
+}
+
+export function setTaskbarWidgetHorizontalOffset(offset: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetHorizontalOffsetNative(offset);
+}
+
+export function setTaskbarWidgetWidth(width: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetWidthNative(width);
+}
+
+export async function refreshTaskbarWidget() {
+  if (!isWindowsClient || !settings.addTaskbarWidget) return;
+  await sendInitialState();
+}
 
 let openWindowButton: HTMLButtonElement = document.createElement("button");
 openWindowButton.innerText = "Open Miniplayer";
@@ -32,6 +120,7 @@ openWindowButton.addEventListener("click", async () => {
   // Send initial state after a short delay to ensure window is ready
   setTimeout(sendInitialState, 100);
 });
+
 openWindowButton.style = `
     border: none;
     background-color: gray;
@@ -62,6 +151,16 @@ async function start() {
   unloads.add(() => {
     _searchAndLinksElement.removeChild(openWindowButton);
   });
+
+  setTaskbarWidgetHorizontalOffsetNative(
+    settings.taskbarWidgetHorizontalOffset,
+  );
+  setTaskbarWidgetWidthNative(settings.taskbarWidgetWidth);
+
+  if (isWindowsClient && settings.addTaskbarWidget) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+  }
 
   initialLyricsLoad();
 }
@@ -104,6 +203,8 @@ async function sendInitialState() {
       colors: currentCoverColors,
     }),
   );
+
+  await sendTaskbarWidgetUpdate(snapshot, 0);
 }
 
 async function initialLyricsLoad() {
@@ -149,33 +250,45 @@ MediaItem.onMediaTransition(unloads, async (mediaItem) => {
 
 start();
 
-ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
-  const signal = data.signal;
-  if (signal !== "media.currenttime") return;
-  const currentTime = Math.floor(Number(data.time));
-  const line = getLyricLineAtTime(lyricsMap, currentTime) || "";
+observePlaybackSnapshot(
+  unloads,
+  async (payload) => {
+    const line = getLyricLineAtTime(lyricsMap, payload.songProgress) || "";
 
-  const mediaItem = await MediaItem.fromPlaybackContext();
-  if (!mediaItem) return;
-  const snapshot = await getMediaItemSnapshot(mediaItem);
-  const songProgress = data.time;
+    sendIPC(
+      "miniplayer.update",
+      JSON.stringify({
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        lyrics: payload.lyrics,
+        lyricsLine: line || "No lyrics available",
+        songLength: payload.duration,
+        songProgress: payload.songProgress || 0,
+        album: payload.album,
+        year: payload.year,
+        colors: currentCoverColors,
+      }),
+    );
 
-  sendIPC(
-    "miniplayer.update",
-    JSON.stringify({
-      title: snapshot.title,
-      artist: snapshot.artist,
-      coverUrl: snapshot.coverUrl,
-      lyrics: snapshot.lyrics,
-      lyricsLine: line || "No lyrics available",
-      songLength: snapshot.duration,
-      songProgress: songProgress || 0,
-      album: snapshot.album,
-      year: snapshot.year,
-      colors: currentCoverColors,
-    }),
-  );
-});
+    await sendTaskbarWidgetUpdate(
+      {
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        duration: payload.duration,
+        album: payload.album,
+        year: payload.year,
+      },
+      payload.songProgress || 0,
+      {
+        qualityName: payload.qualityName,
+        qualityColor: payload.qualityColor,
+      },
+    );
+  },
+  { minUpdateIntervalMs: 150 },
+);
 
 ipcRenderer.on(unloads, "miniplayer.playercontrolsFE", (data) => {
   switch (data.action) {
