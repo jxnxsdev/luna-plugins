@@ -1,5 +1,22 @@
 import * as lib from "@luna/lib";
+import {
+  batchProcess,
+  createUserErrorMessage,
+  fetchWithRetry as sharedFetchWithRetry,
+  getTidalCredentials as sharedGetTidalCredentials,
+  retryWithBackoff as sharedRetryWithBackoff,
+  safeMediaItemFromId as sharedSafeMediaItemFromId,
+  sanitizeSearchQuery,
+  sleep,
+} from "@jxnxsdev/utils";
 import { trace } from ".";
+
+export {
+  batchProcess,
+  createUserErrorMessage,
+  sanitizeSearchQuery,
+  sleep,
+};
 
 /**
  * API retry configuration
@@ -18,54 +35,26 @@ export async function retryWithBackoff<T>(
   context: string,
   maxRetries = RETRY_CONFIG.maxRetries,
 ): Promise<T> {
-  let lastError: Error | undefined;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      if (attempt < maxRetries) {
-        const delay = Math.min(
-          RETRY_CONFIG.baseDelay * Math.pow(2, attempt),
-          RETRY_CONFIG.maxDelay,
-        );
-        trace.warn(
-          `${context} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`,
-        );
-        await sleep(delay);
+  return sharedRetryWithBackoff(fn, {
+    maxRetries,
+    baseDelayMs: RETRY_CONFIG.baseDelay,
+    maxDelayMs: RETRY_CONFIG.maxDelay,
+    onRetry: (attempt, maxAttempts, error, nextDelayMs) => {
+      trace.warn(
+        `${context} failed (attempt ${attempt}/${maxAttempts}), retrying in ${nextDelayMs}ms...`,
+      );
+      if (!error.message) {
+        trace.warn(`${context} retry reason: ${String(error)}`);
       }
-    }
-  }
-
-  throw new Error(
-    `${context} failed after ${maxRetries + 1} attempts: ${lastError?.message}`,
-  );
-}
-
-/**
- * Sleep for a specified duration
- */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+    },
+  });
 }
 
 /**
  * Get Tidal credentials with error handling
  */
 export async function getTidalCredentials(): Promise<{ token: string }> {
-  try {
-    const creds = await lib.getCredentials();
-    if (!creds || !creds.token) {
-      throw new Error("No valid Tidal credentials found");
-    }
-    return creds;
-  } catch (error) {
-    throw new Error(
-      `Failed to get Tidal credentials: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  return sharedGetTidalCredentials();
 }
 
 /**
@@ -76,13 +65,19 @@ export async function fetchWithRetry(
   options: RequestInit,
   context: string,
 ): Promise<Response> {
-  return retryWithBackoff(async () => {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response;
-  }, context);
+  return sharedFetchWithRetry(url, options, context, {
+    maxRetries: RETRY_CONFIG.maxRetries,
+    baseDelayMs: RETRY_CONFIG.baseDelay,
+    maxDelayMs: RETRY_CONFIG.maxDelay,
+    onRetry: (attempt, maxAttempts, error, nextDelayMs) => {
+      trace.warn(
+        `${context} failed (attempt ${attempt}/${maxAttempts}), retrying in ${nextDelayMs}ms...`,
+      );
+      if (!error.message) {
+        trace.warn(`${context} retry reason: ${String(error)}`);
+      }
+    },
+  });
 }
 
 /**
@@ -224,80 +219,10 @@ export async function deleteMediaItemFromPlaylist(
 export async function safeMediaItemFromId(
   id: string,
 ): Promise<lib.MediaItem | null> {
-  try {
-    const item = await lib.MediaItem.fromId(id);
-    if (item && typeof (await item.title()) === "string") {
-      return item;
-    }
-    return null;
-  } catch (err) {
-    trace.err(`Error resolving media item '${id}': ${String(err)}`);
-    return null;
-  }
-}
-
-/**
- * Sanitize search query for better matching
- * @param query Raw search query string
- * @returns Sanitized query string
- */
-export function sanitizeSearchQuery(query: string): string {
-  return query
-    .replace(/[^\w\s'-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Create user-friendly error message
- * @param context Error context description
- * @param error Error object or string
- * @returns Formatted error message
- */
-export function createUserErrorMessage(
-  context: string,
-  error: unknown,
-): string {
-  const errorMsg = error instanceof Error ? error.message : String(error);
-  return `${context}: ${errorMsg}`;
-}
-
-/**
- * Batch process items with delay between batches
- * @param items Array of items to process
- * @param processor Function to process each item
- * @param options Batch processing options (batchSize, delay, progress callback)
- * @returns Array of processing results
- */
-export async function batchProcess<T, R>(
-  items: T[],
-  processor: (item: T, index: number) => Promise<R>,
-  options: {
-    batchSize?: number;
-    delayBetweenBatches?: number;
-    onProgress?: (processed: number, total: number) => void;
-  } = {},
-): Promise<R[]> {
-  const { batchSize = 10, delayBetweenBatches = 1000, onProgress } = options;
-
-  const results: R[] = [];
-
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, Math.min(i + batchSize, items.length));
-    const batchResults = await Promise.all(
-      batch.map((item, batchIndex) => processor(item, i + batchIndex)),
-    );
-
-    results.push(...batchResults);
-
-    if (onProgress) {
-      onProgress(results.length, items.length);
-    }
-
-    if (i + batchSize < items.length) {
-      await sleep(delayBetweenBatches);
-    }
-  }
-
-  return results;
+  return sharedSafeMediaItemFromId(id, {
+    validate: async (item) => typeof (await item.title()) === "string",
+    onError: (error) => {
+      trace.err(`Error resolving media item '${id}': ${String(error)}`);
+    },
+  });
 }

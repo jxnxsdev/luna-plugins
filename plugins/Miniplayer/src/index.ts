@@ -1,25 +1,117 @@
 import type { LunaUnload } from "@luna/core";
 import { redux, MediaItem, PlayState, ipcRenderer } from "@luna/lib";
+import {
+  buildLyricMap,
+  getCoverColorsFromMediaItem,
+  getLyricLineAtTime,
+  getMediaItemSnapshot,
+  observePlaybackSnapshot,
+} from "@jxnxsdev/utils";
 import "./miniplayer.native";
 import {
   openMiniplayerWindow as openWindowNative,
   closeWindow,
   sendIPC,
+  openTaskbarWidgetWindow,
+  closeTaskbarWidgetWindow,
+  sendTaskbarIPC,
+  setTaskbarWidgetHorizontalOffset as setTaskbarWidgetHorizontalOffsetNative,
+  setTaskbarWidgetWidth as setTaskbarWidgetWidthNative,
 } from "./miniplayer.native";
-import ColorThief from "colorthief";
+import { settings } from "./Settings";
 
 let lyricsMap: Map<number, string> = new Map();
-const colorThief = new ColorThief();
 let currentCoverColors: { primary: string; accent: string } = {
   primary: "#ff6b35",
   accent: "#ff8c42",
 };
 
 export const unloads = new Set<LunaUnload>();
+export { Settings } from "./Settings";
+
+const isWindowsClient =
+  typeof navigator !== "undefined" &&
+  /win/i.test(navigator.userAgent || navigator.platform || "");
+
+function getTaskbarDisplaySettings() {
+  return {
+    showProgressBar: settings.taskbarShowProgressBar,
+    showCover: settings.taskbarShowCover,
+    showSongName: settings.taskbarShowSongName,
+    showArtistName: settings.taskbarShowArtistName,
+    showAlbumName: settings.taskbarShowAlbumName,
+    showSongQuality: settings.taskbarShowSongQuality,
+    showYear: settings.taskbarShowYear,
+    showTime: settings.taskbarShowTime,
+    showPlayState: settings.taskbarShowPlayState,
+  };
+}
+
+async function sendTaskbarWidgetUpdate(
+  snapshot: {
+    title: string;
+    artist: string;
+    coverUrl: string;
+    duration: number;
+    album: string;
+    year: string;
+  },
+  songProgress: number,
+  qualityInfo?: { qualityName: string; qualityColor: string },
+) {
+  const qualityName = qualityInfo?.qualityName ?? "Unknown";
+  const qualityColor = qualityInfo?.qualityColor ?? "#9ca3af";
+
+  sendTaskbarIPC(
+    "miniplayer.taskbar.update",
+    JSON.stringify({
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      songLength: snapshot.duration,
+      songProgress,
+      album: snapshot.album,
+      year: snapshot.year,
+      progressColor: currentCoverColors.primary,
+      qualityName,
+      qualityColor,
+      playing: PlayState.playing,
+      display: getTaskbarDisplaySettings(),
+    }),
+  );
+}
 
 unloads.add(() => {
   closeWindow();
+  closeTaskbarWidgetWindow();
 });
+
+export async function setTaskbarWidgetEnabled(enabled: boolean) {
+  if (!isWindowsClient) return;
+
+  if (enabled) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+    return;
+  }
+
+  await closeTaskbarWidgetWindow();
+}
+
+export function setTaskbarWidgetHorizontalOffset(offset: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetHorizontalOffsetNative(offset);
+}
+
+export function setTaskbarWidgetWidth(width: number) {
+  if (!isWindowsClient) return;
+  setTaskbarWidgetWidthNative(width);
+}
+
+export async function refreshTaskbarWidget() {
+  if (!isWindowsClient || !settings.addTaskbarWidget) return;
+  await sendInitialState();
+}
 
 let openWindowButton: HTMLButtonElement = document.createElement("button");
 openWindowButton.innerText = "Open Miniplayer";
@@ -28,6 +120,7 @@ openWindowButton.addEventListener("click", async () => {
   // Send initial state after a short delay to ensure window is ready
   setTimeout(sendInitialState, 100);
 });
+
 openWindowButton.style = `
     border: none;
     background-color: gray;
@@ -59,83 +152,59 @@ async function start() {
     _searchAndLinksElement.removeChild(openWindowButton);
   });
 
+  setTaskbarWidgetHorizontalOffsetNative(
+    settings.taskbarWidgetHorizontalOffset,
+  );
+  setTaskbarWidgetWidthNative(settings.taskbarWidgetWidth);
+
+  if (isWindowsClient && settings.addTaskbarWidget) {
+    await openTaskbarWidgetWindow();
+    setTimeout(sendInitialState, 100);
+  }
+
   initialLyricsLoad();
 }
 
 async function sendInitialState() {
   const mediaItem = await MediaItem.fromPlaybackContext();
   if (!mediaItem) return;
-
-  let title = await mediaItem.title();
-  let artist = await mediaItem.artist();
-  let coverUrl = await mediaItem.coverUrl();
-  let lyrics = await mediaItem.lyrics();
-  let album = await mediaItem
-    .album()
-    .then(async (album) =>
-      album ? (await album.title()) || "Unknown Album" : "Unknown Album",
-    );
-  let songLength = await mediaItem.duration;
-  let year = await mediaItem.releaseDate();
-  let yearString = (await year?.getFullYear().toString()) || "Unknown Year";
+  const snapshot = await getMediaItemSnapshot(mediaItem);
 
   // Extract colors from current cover before sending initial state
-  if (coverUrl) {
-    const coverImg = new Image();
-
-    await new Promise<void>((resolve) => {
-      coverImg.onload = () => {
-        try {
-          const dominantColor = colorThief.getColor(coverImg) as [
-            number,
-            number,
-            number,
-          ];
-          const palette = colorThief.getPalette(coverImg, 2) as [
-            number,
-            number,
-            number,
-          ][];
-
-          const primaryRgb = dominantColor;
-          const accentRgb = palette[1] || palette[0];
-
-          currentCoverColors = {
-            primary: `rgb(${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]})`,
-            accent: `rgb(${accentRgb[0]}, ${accentRgb[1]}, ${accentRgb[2]})`,
-          };
-        } catch (err) {
-          console.error("Error extracting colors:", err);
-        }
-        resolve();
-      };
-
-      coverImg.onerror = () => {
-        resolve(); // Continue even if image fails to load
-      };
-
-      // Set timeout to prevent blocking forever
-      setTimeout(() => resolve(), 500);
-
-      coverImg.src = coverUrl;
-    });
+  if (snapshot.coverUrl) {
+    try {
+      const colors = await getCoverColorsFromMediaItem(mediaItem, {
+        paletteSize: 2,
+        accentIndex: 1,
+      });
+      if (colors) {
+        currentCoverColors = {
+          primary: colors.primary,
+          accent: colors.accent,
+        };
+      }
+    } catch (err) {
+      console.error("Error extracting colors:", err);
+    }
   }
 
   sendIPC(
     "miniplayer.update",
     JSON.stringify({
-      title: title || "Unknown Title",
-      artist: artist || "Unknown Artist",
-      coverUrl: coverUrl || "",
-      lyrics: lyrics || "",
+      title: snapshot.title,
+      artist: snapshot.artist,
+      coverUrl: snapshot.coverUrl,
+      lyrics: snapshot.lyrics,
       lyricsLine: "",
-      songLength: songLength || 0,
+      songLength: snapshot.duration,
       songProgress: 0,
-      album: album || "Unknown Album",
-      year: yearString || "Unknown Year",
+      album: snapshot.album,
+      year: snapshot.year,
       colors: currentCoverColors,
     }),
   );
+
+  await sendTaskbarWidgetUpdate(snapshot, 0);
 }
 
 async function initialLyricsLoad() {
@@ -149,16 +218,7 @@ async function initialLyricsLoad() {
     return;
   }
 
-  const map = new Map<number, string>();
-  for (const line of lyrics.subtitles.split("\n")) {
-    const [timePart, textPart] = line.split("]");
-    if (!textPart) continue;
-    const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-    const timeInSec = Math.floor(min * 60 + sec);
-    map.set(timeInSec, textPart.trim());
-  }
-
-  lyricsMap = map;
+  lyricsMap = buildLyricMap(lyrics.subtitles);
 }
 
 MediaItem.onMediaTransition(unloads, async (mediaItem) => {
@@ -168,116 +228,67 @@ MediaItem.onMediaTransition(unloads, async (mediaItem) => {
   if (!lyrics || !lyrics.subtitles) {
     lyricsMap = new Map();
   } else {
-    const map = new Map<number, string>();
-    for (const line of lyrics.subtitles.split("\n")) {
-      const [timePart, textPart] = line.split("]");
-      if (!textPart) continue;
-      const [min, sec] = timePart.replace("[", "").split(":").map(Number);
-      const timeInSec = Math.floor(min * 60 + sec);
-      map.set(timeInSec, textPart.trim());
-    }
-    lyricsMap = map;
+    lyricsMap = buildLyricMap(lyrics.subtitles);
   }
 
   // Extract colors from cover (runs in main window, no CORS issues)
-  const coverUrl = await mediaItem.coverUrl();
-  if (coverUrl) {
-    const coverImg = new Image();
-    // No need for crossOrigin in main window context
-
-    coverImg.onload = () => {
-      try {
-        const dominantColor = colorThief.getColor(coverImg) as [
-          number,
-          number,
-          number,
-        ];
-        const palette = colorThief.getPalette(coverImg, 2) as [
-          number,
-          number,
-          number,
-        ][];
-
-        const primaryRgb = dominantColor;
-        const accentRgb = palette[1] || palette[0];
-
-        currentCoverColors = {
-          primary: `rgb(${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]})`,
-          accent: `rgb(${accentRgb[0]}, ${accentRgb[1]}, ${accentRgb[2]})`,
-        };
-      } catch (err) {
-        console.error("Error extracting colors:", err);
-        // Keep default colors on error
-      }
-    };
-
-    coverImg.onerror = () => {
-      console.debug("Could not load cover image for color extraction");
-      // Keep default colors on error
-    };
-
-    coverImg.src = coverUrl;
+  try {
+    const colors = await getCoverColorsFromMediaItem(mediaItem, {
+      paletteSize: 2,
+      accentIndex: 1,
+    });
+    if (colors) {
+      currentCoverColors = {
+        primary: colors.primary,
+        accent: colors.accent,
+      };
+    }
+  } catch (err) {
+    console.error("Error extracting colors:", err);
   }
 });
 
 start();
 
-function getClosestTime(currentTime: number): number | null {
-  let closest: number | null = null;
-  let maxTime = -Infinity;
+observePlaybackSnapshot(
+  unloads,
+  async (payload) => {
+    const line = getLyricLineAtTime(lyricsMap, payload.songProgress) || "";
 
-  for (const [time] of lyricsMap) {
-    if (time <= currentTime && time > maxTime) {
-      maxTime = time;
-      closest = time;
-    }
-  }
-
-  return closest;
-}
-
-ipcRenderer.on(unloads, "client.playback.playersignal", async (data) => {
-  const signal = data.signal;
-  if (signal !== "media.currenttime") return;
-  const currentTime = Math.floor(Number(data.time));
-  const closest = getClosestTime(currentTime);
-  let line: string | undefined = "";
-  if (closest !== null) {
-    line = lyricsMap.get(closest);
-  }
-
-  const mediaItem = await MediaItem.fromPlaybackContext();
-  if (!mediaItem) return;
-  let title = await mediaItem.title();
-  let artist = await mediaItem.artist();
-  let coverUrl = await mediaItem.coverUrl();
-  let lyrics = await mediaItem.lyrics();
-  let album = await mediaItem
-    .album()
-    .then(async (album) =>
-      album ? (await album.title()) || "Unknown Album" : "Unknown Album",
+    sendIPC(
+      "miniplayer.update",
+      JSON.stringify({
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        lyrics: payload.lyrics,
+        lyricsLine: line || "No lyrics available",
+        songLength: payload.duration,
+        songProgress: payload.songProgress || 0,
+        album: payload.album,
+        year: payload.year,
+        colors: currentCoverColors,
+      }),
     );
-  let songLength = await mediaItem.duration;
-  let songProgress = data.time;
-  let year = await mediaItem.releaseDate();
-  let yearString = (await year?.getFullYear().toString()) || "Unknown Year";
 
-  sendIPC(
-    "miniplayer.update",
-    JSON.stringify({
-      title: title || "Unknown Title",
-      artist: artist || "Unknown Artist",
-      coverUrl: coverUrl || "",
-      lyrics: lyrics || "",
-      lyricsLine: line || "No lyrics available",
-      songLength: songLength || 0,
-      songProgress: songProgress || 0,
-      album: album || "Unknown Album",
-      year: yearString || "Unknown Year",
-      colors: currentCoverColors,
-    }),
-  );
-});
+    await sendTaskbarWidgetUpdate(
+      {
+        title: payload.title,
+        artist: payload.artist,
+        coverUrl: payload.coverUrl,
+        duration: payload.duration,
+        album: payload.album,
+        year: payload.year,
+      },
+      payload.songProgress || 0,
+      {
+        qualityName: payload.qualityName,
+        qualityColor: payload.qualityColor,
+      },
+    );
+  },
+  { minUpdateIntervalMs: 150 },
+);
 
 ipcRenderer.on(unloads, "miniplayer.playercontrolsFE", (data) => {
   switch (data.action) {

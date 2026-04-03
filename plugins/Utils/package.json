@@ -1,0 +1,29 @@
+{
+	"name": "@jxnxsdev/utils",
+	"description": "Shared utility helpers for luna plugins",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./native": "./src/native/index.native.ts"
+	},
+	"type": "module",
+	"dependencies": {
+		"adm-zip": "^0.5.16",
+		"colorthief": "^2.6.0",
+		"express": "^5.1.0",
+		"qrcode": "^1.5.4",
+		"ws": "^8.18.2"
+	},
+	"devDependencies": {
+		"@types/adm-zip": "^0.5.7",
+		"@types/colorthief": "^2.6.1",
+		"@types/express": "^5.0.3",
+		"@types/qrcode": "^1.5.5",
+		"@types/ws": "^8.18.1"
+	}
+}

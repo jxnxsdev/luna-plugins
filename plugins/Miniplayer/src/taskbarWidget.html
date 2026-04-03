@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Miniplayer Taskbar Widget</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: transparent;
+        color: #f5f7ff;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .widget {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 6px;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .cover {
+        width: 34px;
+        height: 34px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+        align-self: center;
+        background: transparent;
+      }
+
+      .cover.hidden {
+        display: none;
+      }
+
+      .content {
+        min-width: 0;
+        width: 100%;
+        display: grid;
+        grid-template-rows: auto auto auto;
+        row-gap: 1px;
+        align-content: center;
+        padding-top: 0;
+        transform: translateY(-1px);
+      }
+
+      .topRow {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        min-height: 12px;
+      }
+
+      .subRow {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .dividerDot {
+        opacity: 0.7;
+        font-size: 9px;
+        line-height: 1;
+      }
+
+      .isHidden {
+        display: none !important;
+      }
+
+      .song {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.05;
+        margin-top: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        transform: translateY(1px);
+      }
+
+      .state {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 10px;
+        height: 10px;
+        flex-shrink: 0;
+        opacity: 0.9;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        transform: translateY(1px);
+      }
+
+      .state i {
+        display: block;
+        font-size: 8px;
+        line-height: 1;
+      }
+
+      .quality {
+        margin-left: auto;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 12px;
+        font-size: 8px;
+        line-height: 1;
+        border-radius: 3px;
+        padding: 2px 4px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        background: rgba(0, 0, 0, 0.28);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        transform: translateY(1px);
+      }
+
+      .artist {
+        font-size: 10px;
+        line-height: 1;
+        color: rgba(245, 247, 255, 0.78);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+      }
+
+      .album,
+      .year {
+        font-size: 9px;
+        line-height: 1;
+        color: rgba(245, 247, 255, 0.72);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+      }
+
+      .progressBar {
+        width: 100%;
+        min-width: 0;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.35);
+        overflow: hidden;
+      }
+
+      .progressRow {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .progressFill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: #4cc0ff;
+        transition: width 120ms linear;
+      }
+
+      .timeRow {
+        display: block;
+        font-size: 9px;
+        line-height: 1;
+        color: rgba(245, 247, 255, 0.85);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        white-space: nowrap;
+      }
+
+      .timeRow.start {
+        text-align: left;
+      }
+
+      .timeRow.end {
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="widget">
+      <img id="cover" class="cover" alt="Song cover" />
+      <div class="content">
+        <div class="topRow">
+          <span id="state" class="state"
+            ><i id="stateIcon" class="fa-solid fa-play" aria-hidden="true"></i
+          ></span>
+          <div id="song" class="song">Nothing playing</div>
+          <span id="quality" class="quality">HQ</span>
+        </div>
+        <div class="subRow">
+          <div id="artist" class="artist">-</div>
+          <span id="artistAlbumDot" class="dividerDot">•</span>
+          <div id="album" class="album">-</div>
+          <span id="albumYearDot" class="dividerDot">•</span>
+          <div id="year" class="year">-</div>
+        </div>
+        <div id="progressRow" class="progressRow">
+          <span id="elapsed" class="timeRow start">0:00</span>
+          <div class="progressBar">
+            <div id="progressFill" class="progressFill"></div>
+          </div>
+          <span id="remaining" class="timeRow end">-0:00</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("selectstart", (event) => event.preventDefault());
+      document.addEventListener("dragstart", (event) => event.preventDefault());
+      document.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+
+      document.addEventListener("click", () => {
+        if (window.electronAPI?.focusMainWindow) {
+          window.electronAPI.focusMainWindow();
+        }
+      });
+
+      const cover = document.getElementById("cover");
+      const song = document.getElementById("song");
+      const state = document.getElementById("state");
+      const stateIcon = document.getElementById("stateIcon");
+      const quality = document.getElementById("quality");
+      const artist = document.getElementById("artist");
+      const album = document.getElementById("album");
+      const year = document.getElementById("year");
+      const artistAlbumDot = document.getElementById("artistAlbumDot");
+      const albumYearDot = document.getElementById("albumYearDot");
+      const progressRow = document.getElementById("progressRow");
+      const progressFill = document.getElementById("progressFill");
+      const elapsed = document.getElementById("elapsed");
+      const remaining = document.getElementById("remaining");
+
+      function formatTime(value) {
+        const safeSeconds = Math.max(0, Math.floor(Number(value) || 0));
+        const mins = Math.floor(safeSeconds / 60);
+        const secs = safeSeconds % 60;
+        return `${mins}:${secs.toString().padStart(2, "0")}`;
+      }
+
+      function applyUpdate(payload) {
+        if (!payload || typeof payload !== "object") return;
+
+        const display = payload.display || {};
+        const showSongName = display.showSongName !== false;
+        const showArtistName = display.showArtistName !== false;
+        const showAlbumName = !!display.showAlbumName;
+        const showYear = !!display.showYear;
+        const showProgressBar = display.showProgressBar !== false;
+        const showCover = display.showCover !== false;
+        const showSongQuality = !!display.showSongQuality;
+        const showTime = display.showTime !== false;
+        const showPlayState = !!display.showPlayState;
+
+        cover.classList.toggle("hidden", !showCover);
+        song.classList.toggle("isHidden", !showSongName);
+        artist.classList.toggle("isHidden", !showArtistName);
+        album.classList.toggle("isHidden", !showAlbumName);
+        year.classList.toggle("isHidden", !showYear);
+        progressRow.classList.toggle("isHidden", !showProgressBar);
+        quality.classList.toggle("isHidden", !showSongQuality);
+        state.classList.toggle("isHidden", !showPlayState);
+        elapsed.classList.toggle("isHidden", !showTime);
+        remaining.classList.toggle("isHidden", !showTime);
+        artistAlbumDot.classList.toggle(
+          "isHidden",
+          !(showArtistName && showAlbumName),
+        );
+        albumYearDot.classList.toggle("isHidden", !(showAlbumName && showYear));
+
+        if (typeof payload.title === "string") {
+          song.textContent = payload.title || "Unknown title";
+        }
+
+        if (typeof payload.artist === "string") {
+          artist.textContent = payload.artist || "Unknown artist";
+        }
+
+        if (typeof payload.album === "string") {
+          album.textContent = payload.album || "Unknown album";
+        }
+
+        if (typeof payload.year === "string") {
+          year.textContent = payload.year || "-";
+        }
+
+        if (typeof payload.coverUrl === "string" && payload.coverUrl) {
+          cover.src = payload.coverUrl;
+        }
+
+        if (typeof payload.qualityName === "string" && payload.qualityName) {
+          quality.textContent = payload.qualityName;
+        }
+
+        if (typeof payload.qualityColor === "string" && payload.qualityColor) {
+          quality.style.color = payload.qualityColor;
+        }
+
+        if (stateIcon) {
+          stateIcon.className =
+            payload.playing === false ? "fa-solid fa-pause" : "fa-solid fa-play";
+        }
+
+        const total = Number(payload.songLength) || 0;
+        const current = Number(payload.songProgress) || 0;
+        const ratio = total > 0 ? Math.min(1, Math.max(0, current / total)) : 0;
+
+        if (typeof payload.progressColor === "string" && payload.progressColor) {
+          progressFill.style.background = payload.progressColor;
+        }
+
+        progressFill.style.width = `${ratio * 100}%`;
+        elapsed.textContent = formatTime(current);
+        remaining.textContent = `-${formatTime(Math.max(0, total - current))}`;
+      }
+
+      if (window.electronAPI?.onTaskbarWidgetUpdate) {
+        window.electronAPI.onTaskbarWidgetUpdate((data) => {
+          if (typeof data === "string") {
+            try {
+              data = JSON.parse(data);
+            } catch {
+              return;
+            }
+          }
+          applyUpdate(data);
+        });
+      }
+    </script>
+  </body>
+</html>
