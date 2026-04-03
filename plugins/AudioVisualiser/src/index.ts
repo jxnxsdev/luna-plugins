@@ -32,9 +32,12 @@ type CachedAnalyzedData = {
 const RECENT_SONG_HISTORY_LIMIT = 200;
 const CACHE_STORAGE_KEY = "AudioVisualiser.analysedAudioCache.v1";
 const HISTORY_STORAGE_KEY = "AudioVisualiser.recentSongs.v1";
+const FOOTER_POSITION_MARKER = "audioVisualiserManagedPosition";
 const analysedAudioCache = new Map<string, CachedAnalyzedData>();
 const recentPlayedSongIds: string[] = [];
 let persistCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+let attachedFooter: HTMLElement | null = null;
+let originalFooterInlinePosition: string | null = null;
 
 function getSongCacheKey(songId: any) {
   return String(songId);
@@ -387,7 +390,14 @@ function attachVisualiser() {
   if (!footer) return;
 
   if (!footer.contains(visContainer)) {
-    footer.style.position = "relative";
+    const computedPosition = window.getComputedStyle(footer).position;
+    if (computedPosition === "static") {
+      originalFooterInlinePosition = footer.style.position;
+      footer.style.position = "relative";
+      footer.dataset[FOOTER_POSITION_MARKER] = "1";
+    }
+
+    attachedFooter = footer;
     footer.appendChild(visContainer);
   }
 }
@@ -560,7 +570,20 @@ function animate() {
 
 rebuildBars();
 applyVisualiserSettings();
-unloads.add(() => visContainer.remove());
+unloads.add(() => {
+  visContainer.remove();
+
+  if (
+    attachedFooter?.dataset[FOOTER_POSITION_MARKER] === "1" &&
+    originalFooterInlinePosition !== null
+  ) {
+    attachedFooter.style.position = originalFooterInlinePosition;
+    delete attachedFooter.dataset[FOOTER_POSITION_MARKER];
+  }
+
+  attachedFooter = null;
+  originalFooterInlinePosition = null;
+});
 requestAnimationFrame(animate);
 
 let visInterval: NodeJS.Timeout;
