@@ -328,37 +328,33 @@ export const Settings = () => {
         applyVisualiserSettings();
     }, []);
 
+    const sectionTitleStyle: React.CSSProperties = {
+        marginTop: "18px",
+        marginBottom: "8px",
+        fontSize: "13px",
+        fontWeight: 700,
+        letterSpacing: "0.02em",
+        opacity: 0.85
+    };
+
+    const sectionHintStyle: React.CSSProperties = {
+        marginTop: "0",
+        marginBottom: "10px",
+        fontSize: "12px",
+        lineHeight: 1.4,
+        opacity: 0.7
+    };
+
     return (
         <LunaSettings>
-            <LunaNumberSetting
-                title="Update Interval (ms)"
-                desc="How often the visualiser updates in milliseconds. Lower values result in smoother visuals but may use more CPU."
-                tooltip="Visualiser update interval"
-                value={updateInterval}
-                min={5}
-                max={1000}
-                onNumber={(value: number) => {
-                    setUpdateInterval((settings.updateInterval = value));
-                    markAsCustom();
-                    updateIntervalTiming();
-                }}
-            />
-            <LunaNumberSetting
-                title="Bar Count"
-                desc="How many bars to render. Limited by analyser output frequency areas."
-                value={barCount}
-                min={2}
-                max={128}
-                onNumber={(value: number) => {
-                    setBarCount((settings.barCount = value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
+            <div style={sectionTitleStyle}>Presets</div>
+            <p style={sectionHintStyle}>
+                Start with a preset, then tweak controls below. Any manual edit switches back to Custom.
+            </p>
             <LunaSelectSetting
                 id="visualiser-presets"
-                title="Preset"
-                desc="Apply a full visualiser style preset. Manual edits switch this to Custom."
+                title="Visual Style Preset"
+                desc="Applies a full tuning profile for visuals and motion."
                 value={selectedPreset}
                 onChange={(event: any) => {
                     const presetName = event.target.value as string;
@@ -378,92 +374,39 @@ export const Settings = () => {
                     <LunaSelectItem key={preset.name} value={preset.name} children={preset.name} />
                 ))}
             </LunaSelectSetting>
-            <LunaSelectSetting
-                title="Color Mode"
-                desc="Use a fixed color or follow the dominant album art color."
-                value={colorMode}
-                onChange={(event: any) => {
-                    setColorMode((settings.colorMode = event.target.value));
+
+            <div style={sectionTitleStyle}>Performance and Motion</div>
+            <p style={sectionHintStyle}>
+                Lower interval reacts faster, higher smoothing feels calmer. Keep bar count moderate for best performance.
+            </p>
+            <LunaNumberSetting
+                title="Analyser Update Interval (ms)"
+                desc="How often audio magnitudes are sampled. Lower values react faster but can use more CPU."
+                tooltip="Visualiser update interval"
+                value={updateInterval}
+                min={5}
+                max={1000}
+                onNumber={(value: number) => {
+                    setUpdateInterval((settings.updateInterval = value));
                     markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            >
-                <LunaSelectItem value="static" children="Static Color" />
-                <LunaSelectItem value="albumArt" children="Follow Album Art" />
-            </LunaSelectSetting>
-            <LunaTextSetting
-                title="Static Color"
-                desc="Color used when Color Mode is Static. Accepts CSS colors like #33ffee or rgb(51,255,238)."
-                value={staticColor}
-                onChange={(event: any) => {
-                    setStaticColor((settings.staticColor = event.target.value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
-            <LunaTextSetting
-                title="Gradient End Color"
-                desc="Second gradient stop used by Gradient bar style. Accepts CSS colors."
-                value={gradientEndColor}
-                onChange={(event: any) => {
-                    setGradientEndColor((settings.gradientEndColor = event.target.value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
-            <LunaSelectSetting
-                title="Bar Style"
-                desc="Choose how bars are shaped."
-                value={barStyle}
-                onChange={(event: any) => {
-                    setBarStyle((settings.barStyle = event.target.value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            >
-                <LunaSelectItem value="rounded" children="Rounded" />
-                <LunaSelectItem value="sharp" children="Sharp" />
-                <LunaSelectItem value="capsule" children="Capsule" />
-                <LunaSelectItem value="glow" children="Glow" />
-                <LunaSelectItem value="gradient" children="Gradient" />
-                <LunaSelectItem value="segmented" children="Segmented" />
-                <LunaSelectItem value="outline" children="Outline" />
-            </LunaSelectSetting>
-            <LunaSwitchSetting
-                title="Grow From Top"
-                desc="Flips bar growth direction so bars extend downward from the top edge."
-                checked={growFromTop}
-                onChange={(_event: any, checked: boolean) => {
-                    setGrowFromTop((settings.growFromTop = checked));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
-            <LunaSwitchSetting
-                title="Slope Toward Center"
-                desc="Makes bars lean toward the center by reducing edge bar heights."
-                checked={slopeTowardCenter}
-                onChange={(_event: any, checked: boolean) => {
-                    setSlopeTowardCenter((settings.slopeTowardCenter = checked));
-                    markAsCustom();
-                    applyVisualiserSettings();
+                    updateIntervalTiming();
                 }}
             />
             <LunaNumberSetting
-                title="Slope Aggression"
-                desc="How strongly edge bars are reduced when slope is enabled."
-                value={slopeAggression}
-                min={0}
+                title="Smoothing"
+                desc="How quickly bars move toward new values. Higher is smoother and slower."
+                value={smoothing}
+                min={1}
                 max={100}
                 onNumber={(value: number) => {
-                    setSlopeAggression((settings.slopeAggression = value));
+                    setSmoothing((settings.smoothing = value));
                     markAsCustom();
                     applyVisualiserSettings();
                 }}
             />
             <LunaNumberSetting
                 title="Sensitivity (%)"
-                desc="Scales analyser magnitudes before animation. Higher values create taller bars."
+                desc="Scales analyser intensity before animation. Higher values create taller bars."
                 value={sensitivity}
                 min={20}
                 max={400}
@@ -475,7 +418,7 @@ export const Settings = () => {
             />
             <LunaNumberSetting
                 title="Peak Decay (%)"
-                desc="How quickly normalization peak falls. Lower values react faster, higher values feel steadier."
+                desc="How quickly normalization falls after loud sections. Lower reacts faster, higher is steadier."
                 value={peakDecay}
                 min={90}
                 max={100}
@@ -485,14 +428,26 @@ export const Settings = () => {
                     applyVisualiserSettings();
                 }}
             />
+            <LunaSwitchSetting
+                title="Hide When Paused"
+                desc="Fade out the visualiser when playback is paused."
+                checked={hideWhenPaused}
+                onChange={(_event: any, checked: boolean) => {
+                    setHideWhenPaused((settings.hideWhenPaused = checked));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+
+            <div style={sectionTitleStyle}>Layout and Shape</div>
             <LunaNumberSetting
-                title="Visualiser Opacity"
-                desc="Overall visualiser opacity in percent."
-                value={visualiserOpacity}
-                min={0}
-                max={100}
+                title="Bar Count"
+                desc="How many bars to render. Higher values cost more GPU/CPU."
+                value={barCount}
+                min={2}
+                max={128}
                 onNumber={(value: number) => {
-                    setVisualiserOpacity((settings.visualiserOpacity = value));
+                    setBarCount((settings.barCount = value));
                     markAsCustom();
                     applyVisualiserSettings();
                 }}
@@ -511,7 +466,7 @@ export const Settings = () => {
             />
             <LunaNumberSetting
                 title="Minimum Height (%)"
-                desc="Smallest bar height after normalization. Helps keep quiet sections visible."
+                desc="Smallest bar height after normalization."
                 value={minHeight}
                 min={0}
                 max={40}
@@ -523,36 +478,12 @@ export const Settings = () => {
             />
             <LunaNumberSetting
                 title="Maximum Height (%)"
-                desc="Caps bar height to avoid overly tall spikes."
+                desc="Maximum bar height to cap spikes."
                 value={maxHeight}
                 min={20}
                 max={100}
                 onNumber={(value: number) => {
                     setMaxHeight((settings.maxHeight = value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
-            <LunaNumberSetting
-                title="Smoothing"
-                desc="How quickly bars move toward new magnitudes. Higher means smoother/slower movement."
-                value={smoothing}
-                min={1}
-                max={100}
-                onNumber={(value: number) => {
-                    setSmoothing((settings.smoothing = value));
-                    markAsCustom();
-                    applyVisualiserSettings();
-                }}
-            />
-            <LunaNumberSetting
-                title="Glow Strength (px)"
-                desc="Glow radius used by Glow style and as extra softness in some styles."
-                value={glowStrength}
-                min={0}
-                max={40}
-                onNumber={(value: number) => {
-                    setGlowStrength((settings.glowStrength = value));
                     markAsCustom();
                     applyVisualiserSettings();
                 }}
@@ -568,11 +499,110 @@ export const Settings = () => {
                 }}
             />
             <LunaSwitchSetting
-                title="Hide When Paused"
-                desc="Fades out the visualiser when playback is paused."
-                checked={hideWhenPaused}
+                title="Grow From Top"
+                desc="Bars grow downward from the top edge instead of upward from the bottom."
+                checked={growFromTop}
                 onChange={(_event: any, checked: boolean) => {
-                    setHideWhenPaused((settings.hideWhenPaused = checked));
+                    setGrowFromTop((settings.growFromTop = checked));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+            <LunaSwitchSetting
+                title="Slope Toward Center"
+                desc="Reduces edge bar heights so the center appears more prominent."
+                checked={slopeTowardCenter}
+                onChange={(_event: any, checked: boolean) => {
+                    setSlopeTowardCenter((settings.slopeTowardCenter = checked));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+            <LunaNumberSetting
+                title="Slope Aggression"
+                desc="Strength of center slope when enabled."
+                value={slopeAggression}
+                min={0}
+                max={100}
+                onNumber={(value: number) => {
+                    setSlopeAggression((settings.slopeAggression = value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+
+            <div style={sectionTitleStyle}>Color and Style</div>
+            <LunaSelectSetting
+                title="Color Mode"
+                desc="Use a fixed color or follow dominant album art color."
+                value={colorMode}
+                onChange={(event: any) => {
+                    setColorMode((settings.colorMode = event.target.value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            >
+                <LunaSelectItem value="static" children="Static Color" />
+                <LunaSelectItem value="albumArt" children="Follow Album Art" />
+            </LunaSelectSetting>
+            <LunaTextSetting
+                title="Static Color"
+                desc="Color used when Color Mode is Static. Example: #33ffee"
+                value={staticColor}
+                onChange={(event: any) => {
+                    setStaticColor((settings.staticColor = event.target.value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+            <LunaTextSetting
+                title="Gradient End Color"
+                desc="Second stop used by Gradient bar style."
+                value={gradientEndColor}
+                onChange={(event: any) => {
+                    setGradientEndColor((settings.gradientEndColor = event.target.value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+            <LunaSelectSetting
+                title="Bar Style"
+                desc="Shape and appearance of bars."
+                value={barStyle}
+                onChange={(event: any) => {
+                    setBarStyle((settings.barStyle = event.target.value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            >
+                <LunaSelectItem value="rounded" children="Rounded" />
+                <LunaSelectItem value="sharp" children="Sharp" />
+                <LunaSelectItem value="capsule" children="Capsule" />
+                <LunaSelectItem value="glow" children="Glow" />
+                <LunaSelectItem value="gradient" children="Gradient" />
+                <LunaSelectItem value="segmented" children="Segmented" />
+                <LunaSelectItem value="outline" children="Outline" />
+            </LunaSelectSetting>
+            <LunaNumberSetting
+                title="Glow Strength (px)"
+                desc="Glow radius used by Glow style."
+                value={glowStrength}
+                min={0}
+                max={40}
+                onNumber={(value: number) => {
+                    setGlowStrength((settings.glowStrength = value));
+                    markAsCustom();
+                    applyVisualiserSettings();
+                }}
+            />
+            <LunaNumberSetting
+                title="Visualiser Opacity"
+                desc="Overall visualiser opacity in percent."
+                value={visualiserOpacity}
+                min={0}
+                max={100}
+                onNumber={(value: number) => {
+                    setVisualiserOpacity((settings.visualiserOpacity = value));
                     markAsCustom();
                     applyVisualiserSettings();
                 }}

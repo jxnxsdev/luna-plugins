@@ -32,9 +32,12 @@ type CachedAnalyzedData = {
 const RECENT_SONG_HISTORY_LIMIT = 200;
 const CACHE_STORAGE_KEY = "AudioVisualiser.analysedAudioCache.v1";
 const HISTORY_STORAGE_KEY = "AudioVisualiser.recentSongs.v1";
+const FOOTER_POSITION_MARKER = "audioVisualiserManagedPosition";
 const analysedAudioCache = new Map<string, CachedAnalyzedData>();
 const recentPlayedSongIds: string[] = [];
 let persistCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+let attachedFooter: HTMLElement | null = null;
+let originalFooterInlinePosition: string | null = null;
 
 function getSongCacheKey(songId: any) {
   return String(songId);
@@ -227,6 +230,13 @@ let bars: HTMLDivElement[] = [];
 let lastMagnitudes: number[] = [];
 let targetMagnitudes = new Array(8).fill(0);
 let displayTargetMagnitudes = new Array(8).fill(0);
+let renderedScales: number[] = [];
+let renderedOpacities: number[] = [];
+let renderedGlowIntensities: number[] = [];
+let lastFrameTime = 0;
+let lastSampleTime = 0;
+let lastAppliedColorMode = settings.colorMode;
+let lastAlbumArtTrackId: string | null = null;
 let peak = 50;
 
 function getAppliedContainerOpacity() {
@@ -289,6 +299,14 @@ function applyBarStyle() {
   }
 }
 
+function setVisualiserColor(nextColor: string) {
+  if (currentVisualiserColor === nextColor) return;
+
+  currentVisualiserColor = nextColor;
+  renderedGlowIntensities.fill(-1);
+  applyBarStyle();
+}
+
 function rebuildBars() {
   for (const bar of bars) {
     bar.remove();
@@ -317,6 +335,9 @@ function rebuildBars() {
   }
 
   lastMagnitudes = new Array(count).fill(0);
+  renderedScales = new Array(count).fill(-1);
+  renderedOpacities = new Array(count).fill(-1);
+  renderedGlowIntensities = new Array(count).fill(-1);
   applyBarStyle();
 }
 
@@ -344,7 +365,9 @@ export function applyVisualiserSettings() {
     settings.minHeight = settings.maxHeight;
   }
 
-  currentVisualiserColor = getColorModeColor();
+  const previousColorMode = lastAppliedColorMode;
+  lastAppliedColorMode = settings.colorMode;
+  setVisualiserColor(getColorModeColor());
 
   if (bars.length !== settings.barCount) {
     rebuildBars();
@@ -363,6 +386,10 @@ export function applyVisualiserSettings() {
 
   applyBarStyle();
   displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
+
+  if (settings.colorMode === "albumArt" && previousColorMode !== "albumArt") {
+    refreshAlbumArtColorFromCurrentTrack(true).catch(console.error);
+  }
 }
 
 let pendingCoverColorToken = 0;
@@ -376,10 +403,23 @@ async function updateAlbumArtColor(item: MediaItem) {
     if (token !== pendingCoverColorToken || !coverColors) return;
 
     albumArtColor = coverColors.primary;
-    currentVisualiserColor = getColorModeColor();
+    setVisualiserColor(getColorModeColor());
   } catch (error) {
     console.error("Failed to extract album art color:", error);
   }
+}
+
+async function refreshAlbumArtColorFromCurrentTrack(force = false) {
+  if (settings.colorMode !== "albumArt") return;
+
+  const item = await MediaItem.fromPlaybackContext();
+  if (!item) return;
+
+  const trackId = getSongCacheKey(item.id);
+  if (!force && trackId === lastAlbumArtTrackId) return;
+
+  lastAlbumArtTrackId = trackId;
+  await updateAlbumArtColor(item);
 }
 
 function attachVisualiser() {
@@ -387,7 +427,14 @@ function attachVisualiser() {
   if (!footer) return;
 
   if (!footer.contains(visContainer)) {
-    footer.style.position = "relative";
+    const computedPosition = window.getComputedStyle(footer).position;
+    if (computedPosition === "static") {
+      originalFooterInlinePosition = footer.style.position;
+      footer.style.position = "relative";
+      footer.dataset[FOOTER_POSITION_MARKER] = "1";
+    }
+
+    attachedFooter = footer;
     footer.appendChild(visContainer);
   }
 }
@@ -513,7 +560,38 @@ function getDisplayMagnitudes(magnitudes: number[]): number[] {
   return applySlope(resized);
 }
 
-function animate() {
+function sampleCurrentMagnitudes(nowMs: number) {
+  if (!currentFile?.timeline || !currentFile.wasAnalyzed) return;
+  if (!PlayState.playing) return;
+
+  if (lastSampleTime === 0) {
+    lastSampleTime = nowMs;
+  }
+
+  if (nowMs - lastSampleTime < settings.updateInterval) return;
+
+  const elapsed = (nowMs - lastPlaybackUpdate) / 1000;
+  currentPlayTime = lastPlaybackTime + elapsed;
+
+  const timeMs = Math.floor(currentPlayTime * 1000);
+  const magnitudes = getClosestMagnitude(currentFile, timeMs);
+
+  lastSampleTime = nowMs;
+
+  if (!magnitudes) return;
+
+  targetMagnitudes = magnitudes.map((value) =>
+    Number.isFinite(value) ? value : 0,
+  );
+  displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
+}
+
+function animate(nowMs: number) {
+  const frameDeltaMs = lastFrameTime > 0 ? nowMs - lastFrameTime : 16.67;
+  lastFrameTime = nowMs;
+
+  sampleCurrentMagnitudes(nowMs);
+
   const nextOpacity = getAppliedContainerOpacity();
   if (visContainer.style.opacity !== nextOpacity) {
     visContainer.style.opacity = nextOpacity;
@@ -530,7 +608,9 @@ function animate() {
 
   if (peak < 1) peak = 1;
 
-  const smoothingFactor = Math.max(0.02, 1 / (settings.smoothing * 0.2 + 1));
+  const baseSmoothingFactor = Math.max(0.02, 1 / (settings.smoothing * 0.2 + 1));
+  const frameScale = Math.max(frameDeltaMs, 1) / 16.67;
+  const smoothingFactor = 1 - Math.pow(1 - baseSmoothingFactor, frameScale);
   const minHeight = clamp(settings.minHeight, 0, 40);
   const maxHeightLimit = clamp(settings.maxHeight, 20, 100);
 
@@ -540,19 +620,31 @@ function animate() {
 
     const normalizedHeight = Math.min(lastMagnitudes[i] / peak, 1) * 100;
     const height = clamp(normalizedHeight, minHeight, maxHeightLimit);
-    bars[i].style.transform = `scaleY(${height / 100})`;
+    const scale = height / 100;
+    if (Math.abs(renderedScales[i] - scale) > 0.002) {
+      bars[i].style.transform = `scaleY(${scale})`;
+      renderedScales[i] = scale;
+    }
 
     const intensity = Math.min(height / 100, 1);
     if (settings.barStyle !== "gradient" && settings.barStyle !== "outline") {
       bars[i].style.backgroundColor = currentVisualiserColor;
     }
 
-    if (settings.barStyle === "glow") {
+    if (
+      settings.barStyle === "glow" &&
+      Math.abs(renderedGlowIntensities[i] - intensity) > 0.02
+    ) {
       bars[i].style.boxShadow =
         `0 0 ${clamp(settings.glowStrength, 0, 40) * (0.25 + intensity)}px ${currentVisualiserColor}`;
+      renderedGlowIntensities[i] = intensity;
     }
 
-    bars[i].style.opacity = `${0.2 + 0.8 * intensity}`;
+    const opacity = 0.2 + 0.8 * intensity;
+    if (Math.abs(renderedOpacities[i] - opacity) > 0.01) {
+      bars[i].style.opacity = `${opacity}`;
+      renderedOpacities[i] = opacity;
+    }
   }
 
   requestAnimationFrame(animate);
@@ -560,43 +652,29 @@ function animate() {
 
 rebuildBars();
 applyVisualiserSettings();
-unloads.add(() => visContainer.remove());
+unloads.add(() => {
+  visContainer.remove();
+
+  if (
+    attachedFooter?.dataset[FOOTER_POSITION_MARKER] === "1" &&
+    originalFooterInlinePosition !== null
+  ) {
+    attachedFooter.style.position = originalFooterInlinePosition;
+    delete attachedFooter.dataset[FOOTER_POSITION_MARKER];
+  }
+
+  attachedFooter = null;
+  originalFooterInlinePosition = null;
+});
 requestAnimationFrame(animate);
 
-let visInterval: NodeJS.Timeout;
-
-async function createVisInterval() {
-  visInterval = setInterval(() => {
-    if (!currentFile?.timeline || !currentFile.wasAnalyzed) return;
-    if (!PlayState.playing) return;
-
-    const now = performance.now();
-    const elapsed = (now - lastPlaybackUpdate) / 1000;
-
-    currentPlayTime = lastPlaybackTime + elapsed;
-
-    const timeMs = Math.floor(currentPlayTime * 1000);
-    const magnitudes = getClosestMagnitude(currentFile, timeMs);
-
-    if (magnitudes) {
-      targetMagnitudes = magnitudes.map((value) =>
-        Number.isFinite(value) ? value : 0,
-      );
-      displayTargetMagnitudes = getDisplayMagnitudes(targetMagnitudes);
-    }
-  }, settings.updateInterval);
-}
-
-unloads.add(() => clearInterval(visInterval));
-createVisInterval();
-
 export function updateIntervalTiming() {
-  clearInterval(visInterval);
-  createVisInterval();
+  lastSampleTime = 0;
 }
 
 MediaItem.onMediaTransition(unloads, async (item) => {
   attachVisualiser();
+  lastAlbumArtTrackId = getSongCacheKey(item.id);
   updateAlbumArtColor(item).catch(console.error);
   markSongPlayed(item.id);
 
