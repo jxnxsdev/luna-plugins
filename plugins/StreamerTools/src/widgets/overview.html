@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamer Tools widgets</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .widgets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-auto-rows: minmax(300px, auto);    
+            gap: 10px;
+        }
+
+        .widget {
+            background-color: #f0f0f0;
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            text-align: center;
+            height: fit-content;
+        }
+
+        .widget-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .widget-title {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .widget-link a {
+            text-decoration: none;
+            color: #007bff;
+        }
+
+        .widget-content {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class = "widgets">
+        
+    </div>
+
+
+    <script>
+        const widgetData = [
+            { title: "Widget 1", link: "/streamer-tools/widget1" },
+            { title: "Widget 2", link: "/streamer-tools/widget2" },
+            { title: "Widget 3", link: "/streamer-tools/widget3" },
+            { title: "Widget 4", link: "/streamer-tools/widget4" },
+            { title: "Widget 5", link: "/streamer-tools/widget5" },
+        ];
+
+        async function addWidgets() {
+            const widgetsContainer = document.querySelector(".widgets");
+            widgetData.forEach(widget => {
+                const widgetElement = document.createElement("div");
+                widgetElement.classList.add("widget");
+
+                const widgetHeader = document.createElement("div");
+                widgetHeader.classList.add("widget-header");
+
+                const widgetTitle = document.createElement("div");
+                widgetTitle.classList.add("widget-title");
+                widgetTitle.textContent = widget.title;
+
+                const widgetLink = document.createElement("div");
+                widgetLink.classList.add("widget-link");
+                const linkElement = document.createElement("a");
+                linkElement.href = widget.link;
+                linkElement.textContent = "Link";
+                widgetLink.appendChild(linkElement);
+
+                widgetHeader.appendChild(widgetTitle);
+                widgetHeader.appendChild(widgetLink);
+
+                const widgetContent = document.createElement("div");
+                widgetContent.classList.add("widget-content");
+                const iframeElement = document.createElement("iframe");
+                iframeElement.src = widget.link;
+                iframeElement.width = "100%";
+                iframeElement.height = "200";
+                widgetContent.appendChild(iframeElement);
+
+                widgetElement.appendChild(widgetHeader);
+                widgetElement.appendChild(widgetContent);
+
+                widgetsContainer.appendChild(widgetElement);
+            });
+        }
+
+        addWidgets();
+    </script>
+</body>
+</html>

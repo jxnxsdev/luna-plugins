@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Compact Media Widget</title>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+<style>
+:root {
+    --primary:#7c5cff;
+    --bg:#202124;
+    --text:#fff;
+    --sub:rgba(255,255,255,.6);
+}
+
+* {
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+    font-family:Inter,Roboto,Arial,sans-serif;
+}
+
+html,body {
+    background:transparent;
+    overflow:hidden;
+}
+
+
+.widget {
+
+    width:360px;
+    height:58px;
+
+    display:flex;
+    align-items:center;
+
+    gap:10px;
+
+    padding:8px 10px;
+
+    background:var(--bg);
+
+    border-radius:14px;
+
+    color:white;
+
+    border:1px solid rgba(255,255,255,.06);
+
+}
+
+
+.cover {
+
+    width:42px;
+    height:42px;
+
+    border-radius:9px;
+
+    object-fit:cover;
+
+    flex-shrink:0;
+
+}
+
+
+.info {
+
+    flex:1;
+    min-width:0;
+
+}
+
+
+.title-row {
+
+    display:flex;
+    align-items:center;
+    gap:5px;
+
+}
+
+
+.title {
+
+    font-size:14px;
+
+    font-weight:600;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+}
+
+
+.playing-dot {
+
+    width:6px;
+    height:6px;
+
+    border-radius:50%;
+
+    background:var(--primary);
+
+    flex-shrink:0;
+
+}
+
+
+.artist {
+
+    font-size:12px;
+
+    color:var(--sub);
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+}
+
+
+.progress {
+
+    margin-top:5px;
+
+    height:3px;
+
+    width:100%;
+
+    background:rgba(255,255,255,.15);
+
+    border-radius:999px;
+
+    overflow:hidden;
+
+}
+
+
+.bar {
+
+    height:100%;
+
+    width:0%;
+
+    background:var(--primary);
+
+    transition:width .15s linear;
+
+}
+
+
+.next {
+
+    max-width:95px;
+
+    padding-left:8px;
+
+    border-left:
+        1px solid rgba(255,255,255,.12);
+
+    overflow:hidden;
+
+}
+
+
+.next-label {
+
+    font-size:9px;
+
+    color:var(--primary);
+
+    text-transform:uppercase;
+
+    font-weight:700;
+
+}
+
+
+.next-title {
+
+    font-size:11px;
+
+    color:var(--sub);
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+
+.hidden {
+    display:none;
+}
+
+</style>
+
+</head>
+
+<body>
+
+
+<div class="widget">
+
+
+<img
+    id="cover"
+    class="cover"
+    src="https://placehold.co/80x80?text=%E2%99%AA"
+>
+
+
+<div class="info">
+
+
+<div class="title-row">
+
+<div class="playing-dot"></div>
+
+<div class="title" id="title">
+Nothing Playing
+</div>
+
+</div>
+
+
+<div class="artist" id="artist">
+</div>
+
+
+<div class="progress">
+<div class="bar" id="bar"></div>
+</div>
+
+
+</div>
+
+
+<div class="next hidden" id="next">
+
+<div class="next-label">
+Next
+</div>
+
+<div class="next-title" id="nextTitle">
+</div>
+
+</div>
+
+
+</div>
+
+
+
+<script>
+
+const socket = io();
+
+
+let media = {
+    progress:0,
+    duration:0,
+    playing:false
+};
+
+
+const cover =
+document.getElementById("cover");
+
+const title =
+document.getElementById("title");
+
+const artist =
+document.getElementById("artist");
+
+const bar =
+document.getElementById("bar");
+
+const next =
+document.getElementById("next");
+
+const nextTitle =
+document.getElementById("nextTitle");
+
+
+
+function update(){
+
+    title.textContent =
+        media.title || "Nothing Playing";
+
+    artist.textContent =
+        media.artist || "";
+
+
+    if(media.coverURL){
+        cover.src =
+            media.coverURL;
+    }
+
+
+    document.documentElement.style.setProperty(
+        "--primary",
+        media.primaryColor || "#7c5cff"
+    );
+
+
+    const percent =
+        media.duration
+        ? media.progress / media.duration * 100
+        : 0;
+
+
+    bar.style.width =
+        percent + "%";
+
+
+    if(media.nextMediaItem){
+
+        next.classList.remove("hidden");
+
+        nextTitle.textContent =
+            media.nextMediaItem.title || "";
+
+    } else {
+
+        next.classList.add("hidden");
+
+    }
+
+}
+
+
+
+socket.on(
+    "streamer-tools.playbackUpdate",
+    data => {
+
+        media = {
+            ...media,
+            ...data
+        };
+
+        update();
+
+    }
+);
+
+
+
+let last =
+performance.now();
+
+
+function animate(now){
+
+    const delta =
+        (now-last)/1000;
+
+    last = now;
+
+
+    if(media.playing){
+
+        media.progress =
+            Math.min(
+                media.progress + delta,
+                media.duration
+            );
+
+        update();
+
+    }
+
+
+    requestAnimationFrame(animate);
+
+}
+
+
+requestAnimationFrame(animate);
+
+</script>
+
+</body>
+</html>
