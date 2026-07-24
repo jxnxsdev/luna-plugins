@@ -42,6 +42,11 @@ This README is auto-generated from the plugin metadata in the `plugins/` folder.
 - **Version**: 0.0.0
 - **Author**: jxnxsdev
 
+### @jxnxsdev/streamer-tools
+- **Description**: Provides overlays and song requests for (twitch)streamers.
+- **Version**: 0.0.0
+- **Author**: jxnxsdev
+
 ### @jxnxsdev/total-play-time
 - **Description**: Shows the total play time of all songs in the current playlist.
 - **Version**: 0.0.0
