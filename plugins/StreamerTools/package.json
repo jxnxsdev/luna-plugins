@@ -1,0 +1,18 @@
+{
+	"name": "@jxnxsdev/streamer-tools",
+	"description": "Provides overlays and song requests for (twitch)streamers.",
+	"author": {
+		"name": "jxnxsdev",
+		"url": "https://github.com/jxnxsdev",
+		"avatarUrl": ""
+	},
+	"main": "./src/index.ts",
+	"type": "module",
+	"dependencies": {
+		"@jxnxsdev/utils": "workspace:*",
+		"express": "^5.1.0"
+	},
+	"devDependencies": {
+		"@types/express": "^5.0.6"
+	}
+}

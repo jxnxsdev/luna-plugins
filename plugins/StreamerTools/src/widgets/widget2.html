@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Media Widget</title>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+<style>
+:root {
+    --primary: #7c5cff;
+    --secondary: #4ea4ff;
+    --background: #202124;
+    --surface: #2a2b2f;
+    --text: #ffffff;
+    --subtext: rgba(255,255,255,.65);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: Inter, Roboto, Arial, sans-serif;
+}
+
+html, body {
+    background: transparent;
+    overflow: hidden;
+}
+
+.widget {
+    width: 460px;
+
+    background: var(--background);
+
+    border-radius: 16px;
+
+    padding: 12px;
+
+    color: var(--text);
+
+    box-shadow:
+        0 3px 10px rgba(0,0,0,.35);
+
+    border: 1px solid rgba(255,255,255,.06);
+}
+
+
+.current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+
+.cover {
+    width: 64px;
+    height: 64px;
+
+    border-radius: 12px;
+
+    object-fit: cover;
+
+    background: #333;
+}
+
+
+.details {
+    flex: 1;
+    min-width: 0;
+}
+
+
+.label {
+    font-size: 10px;
+
+    font-weight: 700;
+
+    text-transform: uppercase;
+
+    letter-spacing: .08em;
+
+    color: var(--primary);
+
+    margin-bottom: 3px;
+}
+
+
+.title {
+    font-size: 17px;
+
+    font-weight: 600;
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+
+.artist {
+    font-size: 14px;
+
+    color: var(--subtext);
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+
+.album {
+    font-size: 12px;
+
+    color: rgba(255,255,255,.45);
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+
+.progress-container {
+    margin-top: 10px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+}
+
+
+.progress {
+    height: 4px;
+
+    flex: 1;
+
+    background: rgba(255,255,255,.15);
+
+    border-radius: 999px;
+
+    overflow: hidden;
+}
+
+
+.progress-bar {
+    height: 100%;
+
+    width: 0%;
+
+    background: var(--primary);
+
+    border-radius: inherit;
+
+    transition: width .15s linear;
+}
+
+
+.time {
+    font-size: 11px;
+
+    color: var(--subtext);
+
+    min-width: 65px;
+
+    text-align: right;
+}
+
+
+.next {
+
+    margin-top: 10px;
+
+    padding-top: 10px;
+
+    border-top:
+        1px solid rgba(255,255,255,.08);
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+}
+
+
+.next.hidden {
+    display: none;
+}
+
+
+.next-cover {
+    width: 38px;
+
+    height: 38px;
+
+    border-radius: 8px;
+
+    object-fit: cover;
+
+    background:#333;
+}
+
+
+.next-info {
+    min-width:0;
+}
+
+
+.next-label {
+
+    font-size:10px;
+
+    font-weight:700;
+
+    text-transform:uppercase;
+
+    letter-spacing:.08em;
+
+    color:var(--primary);
+
+}
+
+
+.next-title {
+
+    font-size:14px;
+
+    font-weight:500;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+
+.next-artist {
+
+    font-size:12px;
+
+    color:var(--subtext);
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="widget">
+
+    <div class="current">
+
+        <img
+            id="cover"
+            class="cover"
+            src="https://placehold.co/128x128?text=%E2%99%AA"
+        >
+
+        <div class="details">
+
+            <div class="label">
+                Now Playing
+            </div>
+
+            <div class="title" id="title">
+                Nothing Playing
+            </div>
+
+            <div class="artist" id="artist">
+            </div>
+
+            <div class="album" id="album">
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="progress-container">
+
+        <div class="progress">
+            <div class="progress-bar" id="progress"></div>
+        </div>
+
+        <div class="time" id="time">
+            0:00 / 0:00
+        </div>
+
+    </div>
+
+
+    <div class="next hidden" id="next">
+
+        <img
+            id="nextCover"
+            class="next-cover"
+            src="https://placehold.co/64x64"
+        >
+
+        <div class="next-info">
+
+            <div class="next-label">
+                Next
+            </div>
+
+            <div class="next-title" id="nextTitle">
+            </div>
+
+            <div class="next-artist" id="nextArtist">
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const socket = io();
+
+
+let media = {
+    title:"",
+    artist:"",
+    album:"",
+    coverURL:"",
+    playing:false,
+    progress:0,
+    duration:0,
+    primaryColor:"#7c5cff",
+    secondaryColor:"#4ea4ff",
+    nextMediaItem:null
+};
+
+
+const cover = document.getElementById("cover");
+const title = document.getElementById("title");
+const artist = document.getElementById("artist");
+const album = document.getElementById("album");
+
+const progress = document.getElementById("progress");
+const time = document.getElementById("time");
+
+const next = document.getElementById("next");
+const nextCover = document.getElementById("nextCover");
+const nextTitle = document.getElementById("nextTitle");
+const nextArtist = document.getElementById("nextArtist");
+
+
+function formatTime(seconds){
+
+    seconds = Math.floor(seconds || 0);
+
+    const minutes = Math.floor(seconds / 60);
+
+    const secs = seconds % 60;
+
+    return `${minutes}:${String(secs).padStart(2,"0")}`;
+
+}
+
+
+function update(){
+
+    title.textContent =
+        media.title || "Nothing Playing";
+
+    artist.textContent =
+        media.artist || "";
+
+    album.textContent =
+        media.album || "";
+
+
+    if(media.coverURL){
+        cover.src = media.coverURL;
+    }
+
+
+    document.documentElement.style.setProperty(
+        "--primary",
+        media.primaryColor || "#7c5cff"
+    );
+
+
+    document.documentElement.style.setProperty(
+        "--secondary",
+        media.secondaryColor || "#4ea4ff"
+    );
+
+
+    const percent =
+        media.duration
+        ? (media.progress / media.duration) * 100
+        : 0;
+
+
+    progress.style.width =
+        `${percent}%`;
+
+
+    time.textContent =
+        `${formatTime(media.progress)} / ${formatTime(media.duration)}`;
+
+
+
+    if(media.nextMediaItem){
+
+        next.classList.remove("hidden");
+
+        nextTitle.textContent =
+            media.nextMediaItem.title || "";
+
+        nextArtist.textContent =
+            media.nextMediaItem.artist || "";
+
+
+        if(media.nextMediaItem.coverURL){
+            nextCover.src =
+                media.nextMediaItem.coverURL;
+        }
+
+    } else {
+
+        next.classList.add("hidden");
+
+    }
+
+}
+
+
+
+socket.on(
+    "streamer-tools.playbackUpdate",
+    data => {
+
+        media = {
+            ...media,
+            ...data
+        };
+
+        update();
+
+    }
+);
+
+
+
+let last = performance.now();
+
+
+function tick(now){
+
+    const delta =
+        (now-last)/1000;
+
+    last = now;
+
+
+    if(media.playing){
+
+        media.progress =
+            Math.min(
+                media.progress + delta,
+                media.duration
+            );
+
+        update();
+
+    }
+
+
+    requestAnimationFrame(tick);
+
+}
+
+
+update();
+
+requestAnimationFrame(tick);
+
+</script>
+
+</body>
+</html>

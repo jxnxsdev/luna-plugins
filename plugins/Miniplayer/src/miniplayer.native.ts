@@ -331,9 +331,7 @@ const getWindowArea = (window: BrowserWindow) => {
 const getMainAppWindow = (): BrowserWindow | null => {
   const windows = BrowserWindow.getAllWindows().filter(
     (window) =>
-      !window.isDestroyed() &&
-      window !== taskbarWidgetWin &&
-      window !== win,
+      !window.isDestroyed() && window !== taskbarWidgetWin && window !== win,
   );
   if (windows.length === 0) return null;
 
@@ -345,7 +343,9 @@ const getMainAppWindow = (): BrowserWindow | null => {
     .sort(byLargestArea);
   if (preferred.length > 0) return preferred[0];
 
-  const visible = windows.filter((window) => window.isVisible()).sort(byLargestArea);
+  const visible = windows
+    .filter((window) => window.isVisible())
+    .sort(byLargestArea);
   if (visible.length > 0) return visible[0];
 
   return windows.sort(byLargestArea)[0] ?? null;

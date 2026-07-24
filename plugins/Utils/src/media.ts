@@ -215,8 +215,7 @@ export function observePlaybackSnapshot(
     const playbackQuality = Quality.fromAudioQuality(
       PlayState.playbackContext.actualAudioQuality,
     );
-    const qualityName =
-      bestQuality?.name ?? playbackQuality?.name ?? "Unknown";
+    const qualityName = bestQuality?.name ?? playbackQuality?.name ?? "Unknown";
     const qualityColor =
       bestQuality?.color ?? playbackQuality?.color ?? "#9ca3af";
 

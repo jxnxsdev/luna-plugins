@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type Router } from "express";
 import http from "http";
+import { Server as SocketIOServer } from "socket.io";
 import { createWebSocketHub, type WebSocketHub } from "./websocket.native";
 
 export type EndpointAccessScope = "local" | "network";
@@ -19,6 +20,7 @@ type RegisteredPlugin = {
 type SharedHttpState = {
 	app: express.Express;
 	server: http.Server;
+	socketIoServer: SocketIOServer | null;
 	pluginsByName: Map<string, RegisteredPlugin>;
 	webSocketHubByPlugin: Map<string, WebSocketHub>;
 	port: number;
@@ -33,6 +35,15 @@ function getStateContainer() {
 		__JXNXSDEV_SHARED_HTTP_SERVER__?: SharedHttpState;
 	};
 	return root;
+}
+
+function ensureSocketIoServer(state: SharedHttpState): SocketIOServer {
+	if (state.socketIoServer) {
+		return state.socketIoServer;
+	}
+
+	state.socketIoServer = new SocketIOServer(state.server);
+	return state.socketIoServer;
 }
 
 function getClientIpAddress(req: Request): string {
@@ -58,6 +69,7 @@ function isLoopbackAddress(ip: string): boolean {
 async function ensureState(preferredPort?: number): Promise<SharedHttpState> {
 	const root = getStateContainer();
 	if (root.__JXNXSDEV_SHARED_HTTP_SERVER__) {
+		ensureSocketIoServer(root.__JXNXSDEV_SHARED_HTTP_SERVER__);
 		return root.__JXNXSDEV_SHARED_HTTP_SERVER__;
 	}
 
@@ -139,11 +151,14 @@ async function ensureState(preferredPort?: number): Promise<SharedHttpState> {
 	const state: SharedHttpState = {
 		app,
 		server,
+		socketIoServer: null,
 		pluginsByName,
 		webSocketHubByPlugin,
 		port,
 		host: DEFAULT_HOST,
 	};
+
+	ensureSocketIoServer(state);
 
 	root.__JXNXSDEV_SHARED_HTTP_SERVER__ = state;
 	return state;
@@ -265,6 +280,23 @@ export function broadcastPluginWebSocket(
 }
 
 /**
+ * Returns the shared Socket.IO server when the shared HTTP server is running.
+ * @returns Active Socket.IO server or undefined.
+ */
+export function getSharedSocketIoServer(): SocketIOServer | undefined {
+	return getStateContainer().__JXNXSDEV_SHARED_HTTP_SERVER__?.socketIoServer ?? undefined;
+}
+
+/**
+ * Emits a Socket.IO event to all connected clients on the shared server.
+ * @param eventName Socket.IO event name.
+ * @param args Event payload.
+ */
+export function emitSharedSocketIoEvent(eventName: string, ...args: unknown[]): void {
+	getSharedSocketIoServer()?.emit(eventName, ...args);
+}
+
+/**
  * Stops and removes a plugin-scoped WebSocket hub.
  * @param pluginName Registered plugin namespace.
  */
@@ -316,6 +348,13 @@ export async function stopSharedHttpServerIfIdle(): Promise<void> {
 	for (const [pluginName, hub] of state.webSocketHubByPlugin.entries()) {
 		await hub.stop();
 		state.webSocketHubByPlugin.delete(pluginName);
+	}
+
+	if (state.socketIoServer) {
+		await new Promise<void>((resolve) => {
+			state.socketIoServer?.close(() => resolve());
+		});
+		state.socketIoServer = null;
 	}
 
 	await new Promise<void>((resolve, reject) => {

@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Media Widget</title>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+<style>
+
+:root {
+    --primary:#7c5cff;
+    --secondary:#4ea4ff;
+    --bg:rgba(25,25,28,.95);
+    --text:#ffffff;
+    --subtext:rgba(255,255,255,.65);
+}
+
+
+* {
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Inter,Segoe UI,Roboto,sans-serif;
+}
+
+
+html,body {
+    background:transparent;
+    overflow:hidden;
+}
+
+
+.widget {
+
+    width:420px;
+    min-height:110px;
+
+    display:flex;
+    gap:14px;
+    align-items:center;
+
+    padding:14px;
+
+    border-radius:16px;
+
+    background:var(--bg);
+
+    border:1px solid rgba(255,255,255,.08);
+
+    box-shadow:
+        0 4px 12px rgba(0,0,0,.35);
+
+    position:relative;
+
+}
+
+
+
+/* COVER */
+
+.cover {
+
+    width:82px;
+    height:82px;
+
+    border-radius:12px;
+
+    object-fit:cover;
+
+    flex-shrink:0;
+
+}
+
+
+
+/* INFO */
+
+.info {
+
+    flex:1;
+
+    min-width:0;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+
+}
+
+
+.label {
+
+    font-size:10px;
+
+    font-weight:700;
+
+    letter-spacing:.1em;
+
+    text-transform:uppercase;
+
+    color:var(--primary);
+
+    margin-bottom:3px;
+
+}
+
+
+.title {
+
+    color:var(--text);
+
+    font-size:18px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+
+.artist {
+
+    color:var(--subtext);
+
+    font-size:14px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+
+.album {
+
+    color:rgba(255,255,255,.45);
+
+    font-size:12px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+
+
+/* PROGRESS */
+
+.bottom {
+
+    display:flex;
+
+    align-items:center;
+
+    gap:8px;
+
+    margin-top:8px;
+
+}
+
+
+.progress {
+
+    flex:1;
+
+    height:5px;
+
+    background:rgba(255,255,255,.12);
+
+    border-radius:999px;
+
+    overflow:hidden;
+
+}
+
+
+.bar {
+
+    height:100%;
+
+    width:0%;
+
+    background:
+        linear-gradient(
+            90deg,
+            var(--primary),
+            var(--secondary)
+        );
+
+    transition:width .15s linear;
+
+}
+
+
+
+/* NEXT */
+
+.next {
+
+    position:absolute;
+
+    left:14px;
+
+    right:14px;
+
+    bottom:-58px;
+
+    height:48px;
+
+    background:#202124;
+
+    border-radius:12px;
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    padding:6px 10px;
+
+}
+
+
+.next.hidden {
+
+    display:none;
+
+}
+
+
+.next-cover {
+
+    width:36px;
+
+    height:36px;
+
+    border-radius:8px;
+
+    object-fit:cover;
+
+}
+
+
+.next-info {
+
+    min-width:0;
+
+}
+
+
+.next-label {
+
+    font-size:9px;
+
+    font-weight:700;
+
+    text-transform:uppercase;
+
+    color:var(--secondary);
+
+}
+
+
+.next-title {
+
+    font-size:13px;
+
+    font-weight:600;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+
+.next-artist {
+
+    font-size:11px;
+
+    color:var(--subtext);
+
+}
+
+
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="widget">
+
+
+<img
+    id="cover"
+    class="cover"
+    src="https://placehold.co/300?text=%E2%99%AA"
+>
+
+
+<div class="info">
+
+
+<div class="label">
+NOW PLAYING
+</div>
+
+
+<div class="title" id="title">
+Nothing Playing
+</div>
+
+
+<div class="artist" id="artist">
+</div>
+
+
+<div class="album" id="album">
+</div>
+
+
+
+<div class="bottom">
+
+<div class="progress">
+
+<div class="bar" id="bar"></div>
+
+</div>
+
+</div>
+
+
+</div>
+
+
+<div class="next hidden" id="next">
+
+<img
+    id="nextCover"
+    class="next-cover"
+    src="https://placehold.co/100"
+>
+
+
+<div class="next-info">
+
+<div class="next-label">
+UP NEXT
+</div>
+
+
+<div class="next-title" id="nextTitle">
+</div>
+
+
+<div class="next-artist" id="nextArtist">
+</div>
+
+
+</div>
+
+</div>
+
+
+</div>
+
+
+
+<script>
+
+
+const socket = io();
+
+
+let media = {
+
+    progress:0,
+    duration:0,
+    playing:false
+
+};
+
+
+
+const cover =
+document.getElementById("cover");
+
+const title =
+document.getElementById("title");
+
+const artist =
+document.getElementById("artist");
+
+const album =
+document.getElementById("album");
+
+const bar =
+document.getElementById("bar");
+
+
+const next =
+document.getElementById("next");
+
+const nextCover =
+document.getElementById("nextCover");
+
+const nextTitle =
+document.getElementById("nextTitle");
+
+const nextArtist =
+document.getElementById("nextArtist");
+
+
+
+function update(){
+
+
+    title.textContent =
+        media.title || "Nothing Playing";
+
+
+    artist.textContent =
+        media.artist || "";
+
+
+    album.textContent =
+        media.album || "";
+
+
+
+    if(media.coverURL)
+        cover.src = media.coverURL;
+
+
+
+    document.documentElement.style.setProperty(
+        "--primary",
+        media.primaryColor || "#7c5cff"
+    );
+
+
+    document.documentElement.style.setProperty(
+        "--secondary",
+        media.secondaryColor || "#4ea4ff"
+    );
+
+
+
+    bar.style.width =
+        media.duration
+        ?
+        (media.progress / media.duration * 100)+"%"
+        :
+        "0%";
+
+
+
+    if(media.nextMediaItem){
+
+        next.classList.remove("hidden");
+
+        nextTitle.textContent =
+            media.nextMediaItem.title || "";
+
+        nextArtist.textContent =
+            media.nextMediaItem.artist || "";
+
+
+        if(media.nextMediaItem.coverURL)
+            nextCover.src =
+                media.nextMediaItem.coverURL;
+
+    }
+    else {
+
+        next.classList.add("hidden");
+
+    }
+
+}
+
+
+
+socket.on(
+    "streamer-tools.playbackUpdate",
+    data => {
+
+        media = {
+            ...media,
+            ...data
+        };
+
+        update();
+
+    }
+);
+
+
+
+let last = performance.now();
+
+
+function tick(now){
+
+    const delta =
+        (now-last)/1000;
+
+    last=now;
+
+
+    if(media.playing){
+
+        media.progress =
+            Math.min(
+                media.progress+delta,
+                media.duration
+            );
+
+        update();
+
+    }
+
+
+    requestAnimationFrame(tick);
+
+}
+
+
+requestAnimationFrame(tick);
+
+
+</script>
+
+
+</body>
+</html>
